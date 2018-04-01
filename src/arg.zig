@@ -18,7 +18,49 @@ fn eql_str(a: []const u8, b: []const u8) bool {
     return mem.eql(u8, a, b);
 }
 
-const HashMapFlags = HashMap([]const u8, FlagArgs, hash_str, eql_str);
+const HashMapFlags = HashMap([]const u8, FlagArg, hash_str, eql_str);
+
+fn trimStart(slice: []const u8, ch: u8) []const u8 {
+    var i: usize = 0;
+    for (slice) |b| {
+        if (b != '-') break;
+        i += 1;
+    }
+
+    // '---' case?
+    return slice[i..];
+}
+
+// modifies the current argument index during iteration
+fn readFlagArguments(allocator: &Allocator, args: []const []const u8, required: usize, index: &usize) !FlagArg {
+    switch (required) {
+        0 => return FlagArg { .None = undefined },  // TODO: Required to force non-tag but value
+        1 => {
+            if (*index + 1 >= args.len) {
+                return error.MissingFlagArguments;
+            }
+
+            *index += 1;
+            return FlagArg { .Single = args[*index] };
+        },
+        else => |needed| {
+            var extra = ArrayList([]const u8).init(allocator);
+            errdefer extra.deinit();
+
+            var j: usize = 0;
+            while (j < needed) : (j += 1) {
+                if (*index + 1 >= args.len) {
+                    return error.MissingFlagArguments;
+                }
+
+                *index += 1;
+                try extra.append(args[*index]);
+            }
+
+            return FlagArg { .Many = extra };
+        },
+    }
+}
 
 // A store for querying found flags and positional arguments.
 pub const Args = struct {
@@ -31,22 +73,29 @@ pub const Args = struct {
             .positionals = ArrayList([]const u8).init(allocator),
         };
 
+        var i: usize = 0;
+        next: while (i < args.len) : (i += 1) {
+            const arg = args[i];
 
-        next: for (args) |arg| {
-            if (mem.eql(u8, "--", arg[0..2])) {
+            if (arg.len != 0 and arg[0] == '-') {
                 // TODO: struct/hashmap lookup would be nice here.
                 for (spec) |flag| {
-                    if (mem.eql(u8, arg[2..], flag.name)) {
-                        _ = try parsed.flags.put(flag.name, FlagArgs.None);
+                    if (mem.eql(u8, arg, flag.name)) {
+                        const flag_name_trimmed = trimStart(flag.name, '-');
+                        const flag_args = readFlagArguments(allocator, args, flag.required, &i) catch |err| {
+                            // TODO: Assume missing arguments
+                            std.debug.warn("missing argument for flag: {}\n", arg);
+                            return err;
+                        };
 
-                        // parse positionals
-
+                        _ = try parsed.flags.put(flag_name_trimmed, flag_args);
                         continue :next;
                     }
                 }
 
                 // TODO: Better errors with context
-                return error.UnknownArgument;
+                std.debug.warn("could not match flag: {}\n", arg);
+                return error.UnknownFlag;
             } else {
                 try parsed.positionals.append(arg);
             }
@@ -72,7 +121,7 @@ pub const Args = struct {
         // to the given spec.
         if (self.flags.get(name)) |entry| {
             switch (entry.value) {
-                FlagArgs.Single => |inner| { return inner; },
+                FlagArg.Single => |inner| { return inner; },
                 else => @panic("attempted to retrieve flag with wrong type: {}", name),
             }
         } else {
@@ -84,7 +133,7 @@ pub const Args = struct {
     pub fn many(self: &Args, name: []const u8) []const []const u8 {
         if (self.flags.get(name)) |entry| {
             switch (entry.value) {
-                FlagArgs.Many => |inner| { return inner.toSliceConst(); },
+                FlagArg.Many => |inner| { return inner.toSliceConst(); },
                 else => @panic("attempted to retrieve flag with wrong type: {}", name),
             }
         } else {
@@ -94,16 +143,16 @@ pub const Args = struct {
 };
 
 // Arguments for a flag. e.g. --command arg1 arg2.
-const FlagArgs = union(enum) {
+const FlagArg = union(enum) {
     None,
-    Single: []const []const u8,
-    Many: ArrayList([]const []const u8),
+    Single: []const u8,
+    Many: ArrayList([]const u8),
 };
 
 // Specification for how a flag should be parsed.
 pub const Flag = struct {
     name: []const u8,
-    required: ?usize,
+    required: usize,
 
     pub fn Bool(comptime name: []const u8) Flag {
         return ArgN(name, 0);
@@ -113,7 +162,7 @@ pub const Flag = struct {
         return ArgN(name, 1);
     }
 
-    pub fn ArgN(comptime name: []const u8, comptime n: ?usize) Flag {
+    pub fn ArgN(comptime name: []const u8, comptime n: usize) Flag {
         return Flag {
             .name = name,
             .required = n,

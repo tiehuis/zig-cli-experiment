@@ -23,6 +23,7 @@ const usage =
     \\  build-exe   [source]         create executable from source or object files
     \\  build-lib   [source]         create library from source or object files
     \\  build-obj   [source]         create object from source or assembly
+    \\  cc          [args]           call the system c compiler and pass args through
     \\  run         [source]         create executable and run immediately
     \\  fmt         [source]         parse file and render in canonical zig format
     \\  translate-c [source]         convert c code to zig code
@@ -70,21 +71,22 @@ pub fn main() !void {
     }
 
     const commands = []Command {
-        Command { .name = "build",       .exec = cmdBuild },
-        Command { .name = "build-exe",   .exec = cmdPlaceholder  },
-        Command { .name = "build-lib",   .exec = cmdPlaceholder  },
-        Command { .name = "build-obj",   .exec = cmdPlaceholder  },
-        Command { .name = "fmt",         .exec = cmdFmt     },
-        Command { .name = "help",        .exec = cmdHelp    },
-        Command { .name = "run",         .exec = cmdPlaceholder  },
-        Command { .name = "translate-c", .exec = cmdPlaceholder  },
-        Command { .name = "targets",     .exec = cmdTargets },
-        Command { .name = "test",        .exec = cmdPlaceholder  },
-        Command { .name = "version",     .exec = cmdVersion },
-        Command { .name = "zen",         .exec = cmdZen     },
+        Command { .name = "build",       .exec = cmdBuild      },
+        Command { .name = "build-exe",   .exec = cmdBuildExe   },
+        Command { .name = "build-lib",   .exec = cmdBuildLib   },
+        Command { .name = "build-obj",   .exec = cmdBuildObj   },
+        Command { .name = "cc",          .exec = cmdCc         },
+        Command { .name = "fmt",         .exec = cmdFmt        },
+        Command { .name = "help",        .exec = cmdHelp       },
+        Command { .name = "run",         .exec = cmdRun        },
+        Command { .name = "translate-c", .exec = cmdTranslateC },
+        Command { .name = "targets",     .exec = cmdTargets    },
+        Command { .name = "test",        .exec = cmdTest       },
+        Command { .name = "version",     .exec = cmdVersion    },
+        Command { .name = "zen",         .exec = cmdZen        },
 
         // non user facing commands
-        Command { .name = "BUILD_INFO",  .exec = cmdBuildInfo },
+        Command { .name = "BUILD_INFO",  .exec = cmdBuildInfo  },
     };
 
     inline for (commands) |command| {
@@ -127,20 +129,20 @@ const usage_build =
     ;
 
 const args_build_spec = []Flag {
-    Flag.Bool("help"),
-    Flag.Bool("init"),
-    Flag.Arg1("build-file"),
-    Flag.Arg1("cache-dir"),
-    Flag.Bool("verbose"),
-    Flag.Arg1("prefix"),
-    Flag.Arg1("build-file"),
-    Flag.Arg1("cache-dir"),
-    Flag.Bool("verbose-tokenize"),
-    Flag.Bool("verbose-ast"),
-    Flag.Bool("verbose-link"),
-    Flag.Bool("verbose-ir"),
-    Flag.Bool("verbose-llvm-ir"),
-    Flag.Bool("verbose-cimport"),
+    Flag.Bool("--help"),
+    Flag.Bool("--init"),
+    Flag.Arg1("--build-file"),
+    Flag.Arg1("--cache-dir"),
+    Flag.Bool("--verbose"),
+    Flag.Arg1("--prefix"),
+    Flag.Arg1("--build-file"),
+    Flag.Arg1("--cache-dir"),
+    Flag.Bool("--verbose-tokenize"),
+    Flag.Bool("--verbose-ast"),
+    Flag.Bool("--verbose-link"),
+    Flag.Bool("--verbose-ir"),
+    Flag.Bool("--verbose-llvm-ir"),
+    Flag.Bool("--verbose-cimport"),
 };
 
 const missing_build_file =
@@ -196,6 +198,171 @@ fn cmdBuild(allocator: &Allocator, args: []const []const u8) !void {
     // Can we can call the build-runner directly from zig without a separate process?
 }
 
+// build-exe ///////////////////////////////////////////////////////////////////////////////////////
+
+const usage_build_generic =
+    \\usage: zig build-exe <options> [file]
+    \\       zig build-lib <options> [file]
+    \\       zig build-obj <options> [file]
+    \\
+    \\General Options
+    \\  --help                       print this help and exit
+    \\  --color [auto|off|on]        enable or disable colored error messages
+    \\
+    \\Compile Options:
+    \\  --assembly [source]          add assembly file to build
+    \\  --cache-dir [path]           override the cache directory
+    \\  --emit [filetype]            emit a specific file format as compilation output
+    \\  --enable-timing-info         print timing diagnostics
+    \\  --libc-include-dir [path]    directory where libc stdlib.h resides
+    \\  --name [name]                override output name
+    \\  --output [file]              override destination path
+    \\  --output-h [file]            override generated header file path
+    \\  --pkg-begin [name] [path]    make package available to import and push current pkg
+    \\  --pkg-end                    pop current pkg
+    \\  --release-fast               build with optimizations on and safety off
+    \\  --release-safe               build with optimizations on and safety on
+    \\  --static                     output will be statically linked
+    \\  --strip                      exclude debug symbols
+    \\  --target-arch [name]         specify target architecture
+    \\  --target-environ [name]      specify target environment
+    \\  --target-os [name]           specify target operating system
+    \\  --verbose-tokenize           turn on compiler debug output for tokenization
+    \\  --verbose-ast                turn on compiler debug output for parsing into an AST
+    \\  --verbose-link               turn on compiler debug output for linking
+    \\  --verbose-ir                 turn on compiler debug output for Zig IR
+    \\  --verbose-llvm-ir            turn on compiler debug output for LLVM IR
+    \\  --verbose-cimport            turn on compiler debug output for C imports
+    \\  --zig-install-prefix [path]  override directory where zig thinks it is installed
+    \\  -dirafter [dir]              same as -isystem but do it last
+    \\  -isystem [dir]               add additional search path for other .h files
+    \\  -mllvm [arg]                 additional arguments to forward to LLVM's option processing
+    \\
+    \\Link Options:
+    \\  --ar-path [path]             set the path to ar
+    \\  --dynamic-linker [path]      set the path to ld.so
+    \\  --each-lib-rpath             add rpath for each used dynamic library
+    \\  --libc-lib-dir [path]        directory where libc crt1.o resides
+    \\  --libc-static-lib-dir [path] directory where libc crtbegin.o resides
+    \\  --msvc-lib-dir [path]        (windows) directory where vcruntime.lib resides
+    \\  --kernel32-lib-dir [path]    (windows) directory where kernel32.lib resides
+    \\  --library [lib]              link against lib
+    \\  --forbid-library [lib]       make it an error to link against lib
+    \\  --library-path [dir]         add a directory to the library search path
+    \\  --linker-script [path]       use a custom linker script
+    \\  --object [obj]               add object file to build
+    \\  -rdynamic                    add all symbols to the dynamic symbol table
+    \\  -rpath [path]                add directory to the runtime library search path
+    \\  -mconsole                    (windows) --subsystem console to the linker
+    \\  -mwindows                    (windows) --subsystem windows to the linker
+    \\  -framework [name]            (darwin) link against framework
+    \\  -mios-version-min [ver]      (darwin) set iOS deployment target
+    \\  -mmacosx-version-min [ver]   (darwin) set Mac OS X deployment target
+    \\  --ver-major [ver]            dynamic library semver major version
+    \\  --ver-minor [ver]            dynamic library semver minor version
+    \\  --ver-patch [ver]            dynamic library semver patch version
+    \\
+    \\
+    ;
+
+const args_build_generic = []Flag {
+    Flag.Bool("--help"),
+    Flag.Arg1("--color"),
+
+    Flag.Arg1("--assembly"),
+    Flag.Arg1("--cache-dir"),
+    Flag.Arg1("--emit"),
+    Flag.Bool("--enable-timing-info"),
+    Flag.Arg1("--libc-include-dir"),
+    Flag.Arg1("--name"),
+    Flag.Arg1("--output"),
+    Flag.Arg1("--output-h"),
+    Flag.ArgN("--pkg-begin", 2),
+    Flag.Bool("--pkg-end"),
+    Flag.Bool("--release-fast"),
+    Flag.Bool("--release-safe"),
+    Flag.Bool("--static"),
+    Flag.Bool("--strip"),
+    Flag.Arg1("--target-arch"),
+    Flag.Arg1("--target-environ"),
+    Flag.Arg1("--target-os"),
+    Flag.Bool("--verbose-tokenize"),
+    Flag.Bool("--verbose-ast"),
+    Flag.Bool("--verbose-link"),
+    Flag.Bool("--verbose-ir"),
+    Flag.Bool("--verbose-llvm-ir"),
+    Flag.Bool("--verbose-cimport"),
+    Flag.Arg1("--zig-install-prefix"),
+    Flag.Arg1("-dirafter"),
+    Flag.Arg1("-isystem"),
+    Flag.Arg1("-mllvm"),
+
+    Flag.Arg1("--ar-path"),
+    Flag.Arg1("--dynamic-linker"),
+    Flag.Bool("--each-lib-rpath"),
+    Flag.Arg1("--libc-lib-dir"),
+    Flag.Arg1("--libc-static-lib-dir"),
+    Flag.Arg1("--msvc-lib-dir"),
+    Flag.Arg1("--kernel32-lib-dir"),
+    Flag.Arg1("--library"),
+    Flag.Arg1("--forbid-library"),
+    Flag.Arg1("--library-path"),
+    Flag.Arg1("--linker-script"),
+    Flag.Arg1("--object"),
+    // NOTE: Removed -L since it would need to be special-cased and we have an alias in library-path
+    Flag.Bool("-rdynamic"),
+    Flag.Arg1("-rpath"),
+    Flag.Bool("-mconsole"),
+    Flag.Bool("-mwindows"),
+    Flag.Arg1("-framework"),
+    Flag.Arg1("-mios-version-min"),
+    Flag.Arg1("-mmacosx-version-min"),
+    Flag.Arg1("--ver-major"),
+    Flag.Arg1("--ver-minor"),
+    Flag.Arg1("--ver-patch"),
+};
+
+fn cmdBuildExe(allocator: &Allocator, args: []const []const u8) !void {
+    var flags = try Args.parse(allocator, args_build_generic, args);
+    defer flags.deinit();
+
+    if (flags.present("help")) {
+        try stderr.write(usage_build_generic);
+        return;
+    }
+}
+
+// build-lib ///////////////////////////////////////////////////////////////////////////////////////
+
+fn cmdBuildLib(allocator: &Allocator, args: []const []const u8) !void {
+    var flags = try Args.parse(allocator, args_build_generic, args);
+    defer flags.deinit();
+
+    if (flags.present("help")) {
+        try stderr.write(usage_build_generic);
+        return;
+    }
+}
+
+// build-obj ///////////////////////////////////////////////////////////////////////////////////////
+
+fn cmdBuildObj(allocator: &Allocator, args: []const []const u8) !void {
+    var flags = try Args.parse(allocator, args_build_generic, args);
+    defer flags.deinit();
+
+    if (flags.present("help")) {
+        try stderr.write(usage_build_generic);
+        return;
+    }
+}
+
+// cc //////////////////////////////////////////////////////////////////////////////////////////////
+
+fn cmdCc(allocator: &Allocator, args: []const []const u8) !void {
+    // pass through all arguments without parsing on our end to libclang or system cc
+    try alwaysOk();
+}
+
 // fmt /////////////////////////////////////////////////////////////////////////////////////////////
 
 const usage_fmt =
@@ -208,7 +375,7 @@ const usage_fmt =
     ;
 
 const args_fmt_spec = []Flag {
-    Flag.Bool("help"),
+    Flag.Bool("--help"),
 };
 
 fn cmdFmt(allocator: &Allocator, args: []const []const u8) !void {
@@ -251,6 +418,84 @@ fn cmdVersion(allocator: &Allocator, args: []const []const u8) !void {
     const c = struct { const ZIG_VERSION_STRING = c"placeholder"; };
 
     try stdout.print("{}\n", std.cstr.toSliceConst(c.ZIG_VERSION_STRING));
+}
+
+// test ////////////////////////////////////////////////////////////////////////////////////////////
+
+const usage_test =
+    \\usage: zig test [file]...
+    \\
+    \\Options:
+    \\   --help                 Print this help and exit
+    \\
+    \\
+    ;
+
+const args_test_spec = []Flag {
+    Flag.Bool("--help"),
+};
+
+
+fn cmdTest(allocator: &Allocator, args: []const []const u8) !void {
+    var flags = try Args.parse(allocator, args_build_spec, args);
+    defer flags.deinit();
+
+    if (flags.present("help")) {
+        try stderr.write(usage_test);
+        return;
+    }
+}
+
+// run ////////////////////////////////////////////////////////////////////////////////////////////
+
+const usage_run =
+    \\usage: zig run [file]...
+    \\
+    \\Options:
+    \\   --help                 Print this help and exit
+    \\
+    \\
+    ;
+
+const args_run_spec = []Flag {
+    Flag.Bool("--help"),
+};
+
+
+fn cmdRun(allocator: &Allocator, args: []const []const u8) !void {
+    var flags = try Args.parse(allocator, args_build_spec, args);
+    defer flags.deinit();
+
+    if (flags.present("help")) {
+        try stderr.write(usage_run);
+        return;
+    }
+}
+
+// translate-c /////////////////////////////////////////////////////////////////////////////////////
+
+const usage_translate_c =
+    \\usage: zig translate-c [file]...
+    \\
+    \\Options:
+    \\   --help                 Print this help and exit
+    \\
+    \\
+    ;
+
+const args_translate_c_spec = []Flag {
+    Flag.Bool("--help"),
+};
+
+
+fn cmdTranslateC(allocator: &Allocator, args: []const []const u8) !void {
+    var flags = try Args.parse(allocator, args_build_spec, args);
+    defer flags.deinit();
+
+    if (flags.present("help")) {
+        try stderr.write(usage_translate_c);
+        return;
+    }
 }
 
 // help ////////////////////////////////////////////////////////////////////////////////////////////
