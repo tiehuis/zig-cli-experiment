@@ -31,8 +31,22 @@ fn trimStart(slice: []const u8, ch: u8) []const u8 {
     return slice[i..];
 }
 
+fn argInAllowedSet(maybe_set: ?[]const []const u8, arg: []const u8) bool {
+    if (maybe_set) |set| {
+        for (set) |possible| {
+            if (mem.eql(u8, arg, possible)) {
+                return true;
+            }
+        }
+        return false;
+    } else {
+        return true;
+    }
+}
+
 // modifies the current argument index during iteration
-fn readFlagArguments(allocator: &Allocator, args: []const []const u8, required: usize, index: &usize) !FlagArg {
+fn readFlagArguments(allocator: &Allocator, args: []const []const u8, required: usize,
+                     allowed_set: ?[]const []const u8, index: &usize) !FlagArg {
     switch (required) {
         0 => return FlagArg { .None = undefined },  // TODO: Required to force non-tag but value
         1 => {
@@ -41,7 +55,13 @@ fn readFlagArguments(allocator: &Allocator, args: []const []const u8, required: 
             }
 
             *index += 1;
-            return FlagArg { .Single = args[*index] };
+            const arg = args[*index];
+
+            if (!argInAllowedSet(allowed_set, arg)) {
+                return error.ArgumentNotInAllowedSet;
+            }
+
+            return FlagArg { .Single = arg };
         },
         else => |needed| {
             var extra = ArrayList([]const u8).init(allocator);
@@ -54,7 +74,13 @@ fn readFlagArguments(allocator: &Allocator, args: []const []const u8, required: 
                 }
 
                 *index += 1;
-                try extra.append(args[*index]);
+                const arg = args[*index];
+
+                if (!argInAllowedSet(allowed_set, arg)) {
+                    return error.ArgumentNotInAllowedSet;
+                }
+
+                try extra.append(arg);
             }
 
             return FlagArg { .Many = extra };
@@ -82,9 +108,22 @@ pub const Args = struct {
                 for (spec) |flag| {
                     if (mem.eql(u8, arg, flag.name)) {
                         const flag_name_trimmed = trimStart(flag.name, '-');
-                        const flag_args = readFlagArguments(allocator, args, flag.required, &i) catch |err| {
-                            // TODO: Assume missing arguments
-                            std.debug.warn("missing argument for flag: {}\n", arg);
+                        const flag_args = readFlagArguments(allocator, args, flag.required, flag.allowed_set, &i) catch |err| {
+                            switch (err) {
+                                error.ArgumentNotInAllowedSet => {
+                                    std.debug.warn("argument is invalid for flag: {}\n", arg);
+                                    std.debug.warn("allowed options are ");
+                                    for (??flag.allowed_set) |possible| {
+                                        std.debug.warn("'{}' ", possible);
+                                    }
+                                    std.debug.warn("\n");
+                                },
+                                error.MissingFlagArguments => {
+                                    std.debug.warn("missing argument for flag: {}\n", arg);
+                                },
+                                else => {},
+                            }
+
                             return err;
                         };
 
@@ -93,7 +132,7 @@ pub const Args = struct {
                     }
                 }
 
-                // TODO: Better errors with context
+                // TODO: Better errors with context, just store a string with the error.
                 std.debug.warn("could not match flag: {}\n", arg);
                 return error.UnknownFlag;
             } else {
@@ -153,6 +192,7 @@ const FlagArg = union(enum) {
 pub const Flag = struct {
     name: []const u8,
     required: usize,
+    allowed_set: ?[]const []const u8,
 
     pub fn Bool(comptime name: []const u8) Flag {
         return ArgN(name, 0);
@@ -166,6 +206,15 @@ pub const Flag = struct {
         return Flag {
             .name = name,
             .required = n,
+            .allowed_set = null,
+        };
+    }
+
+    pub fn Option(comptime name: []const u8, comptime set: []const []const u8) Flag {
+        return Flag {
+            .name = name,
+            .required = 1,
+            .allowed_set = set,
         };
     }
 };
@@ -180,6 +229,7 @@ test "example" {
         Flag.Arg1("prefix"),
         Flag.Arg1("build-file"),
         Flag.Arg1("cache-dir"),
+        Flag.Option("color", []const []const u8 { "on", "off", "auto" }),
         Flag.Bool("verbose-tokenize"),
         Flag.Bool("verbose-ast"),
         Flag.Bool("verbose-link"),

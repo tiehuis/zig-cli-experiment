@@ -267,7 +267,7 @@ const usage_build_generic =
 
 const args_build_generic = []Flag {
     Flag.Bool("--help"),
-    Flag.Arg1("--color"),
+    Flag.Option("--color", []const []const u8 { "auto", "off", "on" }),
 
     Flag.Arg1("--assembly"),
     Flag.Arg1("--cache-dir"),
