@@ -5,7 +5,10 @@ const os = std.os;
 const io = std.io;
 const mem = std.mem;
 const Allocator = mem.Allocator;
+const ArrayList = std.ArrayList;
 const Buffer = std.Buffer;
+
+const warn = std.debug.warn;
 
 const arg = @import("arg.zig");
 const Args = arg.Args;
@@ -13,6 +16,80 @@ const Flag = arg.Flag;
 
 var stderr: &io.OutStream(io.FileOutStream.Error) = undefined;
 var stdout: &io.OutStream(io.FileOutStream.Error) = undefined;
+
+// TODO: might want these in std
+fn fileExists(allocator: &Allocator, path: []const u8) bool {
+    if (os.File.openRead(allocator, path)) |*file| {
+        file.close();
+        return true;
+    } else |_| {
+        return false;
+    }
+}
+
+/// Caller must free result
+fn testZigInstallPrefix(allocator: &mem.Allocator, test_path: []const u8) ![]u8 {
+    const test_zig_dir = try os.path.join(allocator, test_path, "lib", "zig");
+    errdefer allocator.free(test_zig_dir);
+
+    const test_index_file = try os.path.join(allocator, test_zig_dir, "std", "index.zig");
+    defer allocator.free(test_index_file);
+
+    var file = try os.File.openRead(allocator, test_index_file);
+    file.close();
+
+    return test_zig_dir;
+}
+
+/// Caller must free result
+fn findZigLibDir(allocator: &mem.Allocator) ![]u8 {
+    const self_exe_path = try os.selfExeDirPath(allocator);
+    defer allocator.free(self_exe_path);
+
+    var cur_path: []const u8 = self_exe_path;
+    while (true) {
+        const test_dir = os.path.dirname(cur_path);
+
+        if (mem.eql(u8, test_dir, cur_path)) {
+            break;
+        }
+
+        return testZigInstallPrefix(allocator, test_dir) catch |err| {
+            cur_path = test_dir;
+            continue;
+        };
+    }
+
+    // TODO look in hard coded installation path from configuration
+    //if (ZIG_INSTALL_PREFIX != nullptr) {
+    //    if (test_zig_install_prefix(buf_create_from_str(ZIG_INSTALL_PREFIX), out_path)) {
+    //        return 0;
+    //    }
+    //}
+
+    return error.FileNotFound;
+}
+
+fn resolveZigLibDir(allocator: &mem.Allocator, zig_install_prefix_arg: ?[]const u8) ![]u8 {
+    if (zig_install_prefix_arg) |zig_install_prefix| {
+        return testZigInstallPrefix(allocator, zig_install_prefix) catch |err| {
+            warn("No Zig installation found at prefix {}: {}\n", zig_install_prefix_arg, @errorName(err));
+            return error.ZigInstallationNotFound;
+        };
+    } else {
+        return findZigLibDir(allocator) catch |err| {
+            warn(
+                \\Unable to find zig lib directory: {}.
+                \\Reinstall Zig or use --zig-install-prefix.
+                \\
+                ,
+                @errorName(err)
+            );
+
+            return error.ZigLibDirNotFound;
+        };
+    }
+}
 
 const usage =
     \\usage: zig [command] [options]
@@ -163,39 +240,110 @@ fn cmdBuild(allocator: &Allocator, args: []const []const u8) !void {
         return;
     }
 
+    // TODO: Maybe get all these special paths and return as a struct.
+    const zig_lib_dir = try resolveZigLibDir(allocator, flags.single("zig_install_prefix") ?? null);
+    defer allocator.free(zig_lib_dir);
+
+    const zig_std_dir = try os.path.join(allocator, zig_lib_dir, "std");
+    defer allocator.free(zig_std_dir);
+
+    const special_dir = try os.path.join(allocator, zig_std_dir, "special");
+    defer allocator.free(special_dir);
+
+    const build_runner_path = try os.path.join(allocator, special_dir, "build_runner.zig");
+    defer allocator.free(build_runner_path);
+
+    const build_file = flags.single("build-file") ?? "build-zig";
+    const build_file_abs = try os.path.resolve(allocator, ".", build_file);
+    defer allocator.free(build_file_abs);
+
+    const build_file_exists = fileExists(allocator, build_file_abs);
+
     if (flags.present("init")) {
-        var build_file_abs = try Buffer.init(allocator, "./"); // TODO
-        defer build_file_abs.deinit();
-
-        var special_dir = try Buffer.init(allocator, "/std/special"); // TODO
-        defer special_dir.deinit();
-
-        try special_dir.append("/");
-        try special_dir.append("build_file_template.zig");
-
-        if (os.copyFile(allocator, special_dir.toSliceConst(), build_file_abs.toSliceConst())) |_| {
-            try stderr.write("Wrote build.zig template\n");
-        } else |err| {
-            try stderr.print("Unable to write build.zig template: {}\n", err);
+        if (build_file_exists) {
+            return;
         }
 
+        const build_template_path = try os.path.join(allocator, special_dir, "build_file_template.zig");
+        defer allocator.free(build_template_path);
+
+        var src_file = try os.File.openRead(allocator, build_template_path);
+        defer src_file.close();
+
+        var dst_file = try os.File.openWrite(allocator, build_file_abs);
+        defer dst_file.close();
+
+        // TODO: CopyFile?
+        while (true) {
+            var buffer: [4096]u8 = undefined;
+            const n = try src_file.read(buffer[0..]);
+            if (n == 0) break;
+            try dst_file.write(buffer[0..n]);
+        }
+
+        try stderr.print("wrote build.zig template\n");
         return;
     }
 
-    // if (!os.fileExists("build.zig")) {
-    //     try stderr.write(missing_build_file);
-    //     return;
-    // }
+    if (build_file_exists) {
+        try stderr.write(missing_build_file);
+        return;
+    }
 
-    // init_all_targets()
+    // TODO: Invoke the build_runner directly and circumvent running the compiler in a subprocess.
+    var zig_exe_path = try os.selfExePath(allocator);
+    defer allocator.free(zig_exe_path);
 
-    // construct exec command and pass through arguments
+    var build_args = ArrayList([]const u8).init(allocator);
+    defer build_args.deinit();
 
-    // find cache dir
+    const build_file_basename = os.path.basename(build_file_abs);
+    const build_file_dirname = os.path.dirname(build_file_abs);
 
-    // create codegen package and spawn process returning its exit status.
+    var full_cache_dir: []u8 = undefined;
+    if (flags.single("cache-dir")) |cache_dir| {
+        full_cache_dir = try os.path.resolve(allocator, ".", cache_dir, full_cache_dir);
+    } else {
+        full_cache_dir = try os.path.join(allocator, build_file_dirname, "zig-cache");
+    }
+    defer allocator.free(full_cache_dir);
 
-    // Can we can call the build-runner directly from zig without a separate process?
+    const path_to_build_exe = try os.path.join(allocator, full_cache_dir, "build");
+    defer allocator.free(path_to_build_exe);
+
+    try build_args.append(path_to_build_exe);
+    try build_args.append(zig_exe_path);
+    try build_args.append(build_file_dirname);
+    try build_args.append(full_cache_dir);
+
+    if (flags.single("zig-install-prefix")) |zig_install_prefix| {
+        try build_args.append(zig_install_prefix);
+    }
+
+    var proc = try os.ChildProcess.init(build_args.toSliceConst(), allocator);
+    defer proc.deinit();
+
+    var term = try proc.spawnAndWait();
+    switch (term) {
+        os.ChildProcess.Term.Exited => |status| {
+            if (status != 0) {
+                warn("{} exited with status {}\n", build_args.at(0), status);
+                os.exit(1);
+            }
+        },
+        os.ChildProcess.Term.Signal => |signal| {
+            warn("{} killed by signal {}\n", build_args.at(0), signal);
+            os.exit(1);
+        },
+        os.ChildProcess.Term.Stopped => |signal| {
+            warn("{} stopped by signal {}\n", build_args.at(0), signal);
+            os.exit(1);
+        },
+        os.ChildProcess.Term.Unknown => |status| {
+            warn("{} encountered unknown failure {}\n", build_args.at(0), status);
+            os.exit(1);
+        },
+    }
 }
 
 // build-exe ///////////////////////////////////////////////////////////////////////////////////////
@@ -271,7 +419,7 @@ const args_build_generic = []Flag {
 
     Flag.Arg1("--assembly"),
     Flag.Arg1("--cache-dir"),
-    Flag.Arg1("--emit"),
+    Flag.Option("--emit", []const []const u8 { "asm", "bin", "llvm-ir" }),
     Flag.Bool("--enable-timing-info"),
     Flag.Arg1("--libc-include-dir"),
     Flag.Arg1("--name"),
@@ -368,6 +516,8 @@ fn cmdCc(allocator: &Allocator, args: []const []const u8) !void {
 const usage_fmt =
     \\usage: zig fmt [file]...
     \\
+    \\   Formats the input files and modifies them in-place.
+    \\
     \\Options:
     \\   --help                 Print this help and exit
     \\
@@ -385,6 +535,38 @@ fn cmdFmt(allocator: &Allocator, args: []const []const u8) !void {
     if (flags.present("help")) {
         try stderr.write(usage_fmt);
         return;
+    }
+
+    if (flags.positionals.len == 0) {
+        try stderr.write("expected at least one source file argument\n");
+        return;
+    }
+
+    for (flags.positionals.toSliceConst()) |file_path| {
+        warn("writing {}\n", file_path);
+
+        var file = try os.File.openRead(allocator, file_path);
+        var file_closed = false;
+        defer file.close();
+
+        const source_code = io.readFileAlloc(allocator, file_path) catch |err| {
+            try stderr.print("unable to open '{}': {}", file_path, err);
+            continue;
+        };
+        defer allocator.free(source_code);
+
+        var tokenizer = std.zig.Tokenizer.init(source_code);
+        var parser = std.zig.Parser.init(&tokenizer, allocator, file_path);
+        defer parser.deinit();
+
+        var tree = try parser.parse();
+        defer tree.deinit();
+
+        // TODO: EACCES, create a copy and do an atomic copy instead?
+        const baf = try io.BufferedAtomicFile.create(allocator, file_path);
+        defer baf.destroy();
+
+        try parser.renderSource(baf.stream(), tree.root_node);
     }
 }
 

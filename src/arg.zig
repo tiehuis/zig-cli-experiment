@@ -154,29 +154,29 @@ pub const Args = struct {
     }
 
     // e.g. --name value
-    pub fn single(self: &Args, name: []const u8) []const u8 {
+    pub fn single(self: &Args, name: []const u8) ?[]const u8 {
         // TODO: Can we enforce these accesses at compile-time, need to move to a struct instead
         // of a hash-map in that case. Assume the user has handled the required options according
         // to the given spec.
         if (self.flags.get(name)) |entry| {
             switch (entry.value) {
                 FlagArg.Single => |inner| { return inner; },
-                else => @panic("attempted to retrieve flag with wrong type: {}", name),
+                else => @panic("attempted to retrieve flag with wrong type"),
             }
         } else {
-            @panic("attempted to retrieve unspecified flag: {}", name);
+            return null;
         }
     }
 
     // e.g. --names value1 value2 value3
-    pub fn many(self: &Args, name: []const u8) []const []const u8 {
+    pub fn many(self: &Args, name: []const u8) ?[]const []const u8 {
         if (self.flags.get(name)) |entry| {
             switch (entry.value) {
                 FlagArg.Many => |inner| { return inner.toSliceConst(); },
-                else => @panic("attempted to retrieve flag with wrong type: {}", name),
+                else => @panic("attempted to retrieve flag with wrong type"),
             }
         } else {
-            @panic("attempted to retrieve unspecified flag: {}", name);
+            return null;
         }
     }
 };
