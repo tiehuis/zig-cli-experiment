@@ -11,6 +11,7 @@ const Buffer = std.Buffer;
 const warn = std.debug.warn;
 
 const arg = @import("arg.zig");
+const introspect = @import("introspect.zig");
 const Args = arg.Args;
 const Flag = arg.Flag;
 
@@ -24,70 +25,6 @@ fn fileExists(allocator: &Allocator, path: []const u8) bool {
         return true;
     } else |_| {
         return false;
-    }
-}
-
-/// Caller must free result
-fn testZigInstallPrefix(allocator: &mem.Allocator, test_path: []const u8) ![]u8 {
-    const test_zig_dir = try os.path.join(allocator, test_path, "lib", "zig");
-    errdefer allocator.free(test_zig_dir);
-
-    const test_index_file = try os.path.join(allocator, test_zig_dir, "std", "index.zig");
-    defer allocator.free(test_index_file);
-
-    var file = try os.File.openRead(allocator, test_index_file);
-    file.close();
-
-    return test_zig_dir;
-}
-
-/// Caller must free result
-fn findZigLibDir(allocator: &mem.Allocator) ![]u8 {
-    const self_exe_path = try os.selfExeDirPath(allocator);
-    defer allocator.free(self_exe_path);
-
-    var cur_path: []const u8 = self_exe_path;
-    while (true) {
-        const test_dir = os.path.dirname(cur_path);
-
-        if (mem.eql(u8, test_dir, cur_path)) {
-            break;
-        }
-
-        return testZigInstallPrefix(allocator, test_dir) catch |err| {
-            cur_path = test_dir;
-            continue;
-        };
-    }
-
-    // TODO look in hard coded installation path from configuration
-    //if (ZIG_INSTALL_PREFIX != nullptr) {
-    //    if (test_zig_install_prefix(buf_create_from_str(ZIG_INSTALL_PREFIX), out_path)) {
-    //        return 0;
-    //    }
-    //}
-
-    return error.FileNotFound;
-}
-
-fn resolveZigLibDir(allocator: &mem.Allocator, zig_install_prefix_arg: ?[]const u8) ![]u8 {
-    if (zig_install_prefix_arg) |zig_install_prefix| {
-        return testZigInstallPrefix(allocator, zig_install_prefix) catch |err| {
-            warn("No Zig installation found at prefix {}: {}\n", zig_install_prefix_arg, @errorName(err));
-            return error.ZigInstallationNotFound;
-        };
-    } else {
-        return findZigLibDir(allocator) catch |err| {
-            warn(
-                \\Unable to find zig lib directory: {}.
-                \\Reinstall Zig or use --zig-install-prefix.
-                \\
-                ,
-                @errorName(err)
-            );
-
-            return error.ZigLibDirNotFound;
-        };
     }
 }
 
@@ -241,7 +178,7 @@ fn cmdBuild(allocator: &Allocator, args: []const []const u8) !void {
     }
 
     // TODO: Maybe get all these special paths and return as a struct.
-    const zig_lib_dir = try resolveZigLibDir(allocator, flags.single("zig_install_prefix") ?? null);
+    const zig_lib_dir = try introspect.resolveZigLibDir(allocator, flags.single("zig_install_prefix") ?? null);
     defer allocator.free(zig_lib_dir);
 
     const zig_std_dir = try os.path.join(allocator, zig_lib_dir, "std");
@@ -425,6 +362,7 @@ const args_build_generic = []Flag {
     Flag.Arg1("--name"),
     Flag.Arg1("--output"),
     Flag.Arg1("--output-h"),
+    // TODO: pkg-begin needs to be ended by a corresponding pkg-end, add ability for this
     Flag.ArgN("--pkg-begin", 2),
     Flag.Bool("--pkg-end"),
     Flag.Bool("--release-fast"),
@@ -470,6 +408,12 @@ const args_build_generic = []Flag {
     Flag.Arg1("--ver-patch"),
 };
 
+const OutputType = enum {
+    Exe,
+    Obj,
+    Lib,
+};
+
 fn cmdBuildExe(allocator: &Allocator, args: []const []const u8) !void {
     var flags = try Args.parse(allocator, args_build_generic, args);
     defer flags.deinit();
@@ -478,6 +422,12 @@ fn cmdBuildExe(allocator: &Allocator, args: []const []const u8) !void {
         try stderr.write(usage_build_generic);
         return;
     }
+
+    // We can consolidate all the build-exe, build-lib, build-obj into a single path once we
+    // set the output type. Check if we should do any specific passing prior.
+    //
+    // test is similar, although the end differs. so possibly consolidate codegen setup and take
+    // a different path on the end.
 }
 
 // build-lib ///////////////////////////////////////////////////////////////////////////////////////
@@ -507,8 +457,38 @@ fn cmdBuildObj(allocator: &Allocator, args: []const []const u8) !void {
 // cc //////////////////////////////////////////////////////////////////////////////////////////////
 
 fn cmdCc(allocator: &Allocator, args: []const []const u8) !void {
-    // pass through all arguments without parsing on our end to libclang or system cc
-    try alwaysOk();
+    // TODO: Would be nice to use libclang directly but I don't think the argument parsing is
+    // exposed in an easy to use way.
+    var command = ArrayList([]const u8).init(allocator);
+    defer command.deinit();
+
+    try command.append("cc");
+    try command.appendSlice(args);
+
+    var proc = try os.ChildProcess.init(command.toSliceConst(), allocator);
+    defer proc.deinit();
+
+    var term = try proc.spawnAndWait();
+    switch (term) {
+        os.ChildProcess.Term.Exited => |status| {
+            if (status != 0) {
+                warn("cc exited with status {}\n", status);
+                os.exit(1);
+            }
+        },
+        os.ChildProcess.Term.Signal => |signal| {
+            warn("cc killed by signal {}\n", signal);
+            os.exit(1);
+        },
+        os.ChildProcess.Term.Stopped => |signal| {
+            warn("cc stopped by signal {}\n", signal);
+            os.exit(1);
+        },
+        os.ChildProcess.Term.Unknown => |status| {
+            warn("cc encountered unknown failure {}\n", status);
+            os.exit(1);
+        },
+    }
 }
 
 // fmt /////////////////////////////////////////////////////////////////////////////////////////////
@@ -630,8 +610,13 @@ fn cmdTest(allocator: &Allocator, args: []const []const u8) !void {
 
 // run ////////////////////////////////////////////////////////////////////////////////////////////
 
+// TODO: We may want to simplify the run interface. It should be for simple quick scripts and if you
+// need something more complex use `zig build-exe` and run manually.
+//
+// TODO: Handle `--` in argument parser. If encountered it simply collects all remaining arguments.
+// Access as normal via `--`.
 const usage_run =
-    \\usage: zig run [file]...
+    \\usage: zig run [file] -- runtime args
     \\
     \\Options:
     \\   --help                 Print this help and exit
@@ -641,6 +626,7 @@ const usage_run =
 
 const args_run_spec = []Flag {
     Flag.Bool("--help"),
+    Flag.Special("--"),
 };
 
 
@@ -652,23 +638,35 @@ fn cmdRun(allocator: &Allocator, args: []const []const u8) !void {
         try stderr.write(usage_run);
         return;
     }
+
+    if (flags.positionals.len != 1) {
+        try stderr.write("expected exactly one zig source file\n");
+        return;
+    }
+
+    const runtime_args = flags.many("--") ?? []const []const u8 {};
 }
 
 // translate-c /////////////////////////////////////////////////////////////////////////////////////
 
 const usage_translate_c =
-    \\usage: zig translate-c [file]...
+    \\usage: zig translate-c [file]
     \\
     \\Options:
-    \\   --help                 Print this help and exit
+    \\  --help                       print this help and exit
+    \\  --enable-timing-info         print timing diagnostics
+    \\  --libc-include-dir [path]    directory where libc stdlib.h resides
+    \\  --output [path]              output file to write generated zig file (default: stdout)
     \\
     \\
     ;
 
 const args_translate_c_spec = []Flag {
     Flag.Bool("--help"),
+    Flag.Bool("--enable-timing-info"),
+    Flag.Arg1("--libc-include-dir"),
+    Flag.Arg1("--output"),
 };
-
 
 fn cmdTranslateC(allocator: &Allocator, args: []const []const u8) !void {
     var flags = try Args.parse(allocator, args_build_spec, args);
@@ -677,6 +675,30 @@ fn cmdTranslateC(allocator: &Allocator, args: []const []const u8) !void {
     if (flags.present("help")) {
         try stderr.write(usage_translate_c);
         return;
+    }
+
+    if (flags.positionals.len != 1) {
+        try stderr.write("expected exactly one c source file\n");
+        return;
+    }
+
+    // set up codegen
+
+    const zig_root_source_file = null;
+
+    // can we limit this to just what we need, i'm pretty sure the C++ version
+    // sets way more than we need and there are very few applicable arguments.
+
+    // codegen_create(g);
+    // codegen_set_out_name(g, null);
+    // codegen_set_libc_include_dir(g);
+    // codegen_translate_c(g, flags.positional.at(0))
+
+    // const out_stream = flags.single("output") ?? stdout;
+    // ast_render(g, stdout, g->root_import->root, 4);
+
+    if (flags.present("enable-timing-info")) {
+        // codegen_print_timing_info(g, stdout);
     }
 }
 
