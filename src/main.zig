@@ -129,7 +129,7 @@ const usage_build =
     \\   --verbose              Print commands before executing them
     \\   --prefix [path]        Override default install prefix
     \\
-    \\Advanced Options:"
+    \\Advanced Options:
     \\   --build-file [file]    Override path to build.zig
     \\   --cache-dir [path]     Override path to cache directory
     \\   --verbose-tokenize     Enable compiler debug output for tokenization
@@ -198,6 +198,7 @@ fn cmdBuild(allocator: &Allocator, args: []const []const u8) !void {
 
     if (flags.present("init")) {
         if (build_file_exists) {
+            try stderr.print("build.zig already exists\n");
             return;
         }
 
@@ -222,7 +223,7 @@ fn cmdBuild(allocator: &Allocator, args: []const []const u8) !void {
         return;
     }
 
-    if (build_file_exists) {
+    if (!build_file_exists) {
         try stderr.write(missing_build_file);
         return;
     }
@@ -509,7 +510,7 @@ const args_fmt_spec = []Flag {
 };
 
 fn cmdFmt(allocator: &Allocator, args: []const []const u8) !void {
-    var flags = try Args.parse(allocator, args_build_spec, args);
+    var flags = try Args.parse(allocator, args_fmt_spec, args);
     defer flags.deinit();
 
     if (flags.present("help")) {
@@ -626,12 +627,14 @@ const usage_run =
 
 const args_run_spec = []Flag {
     Flag.Bool("--help"),
-    Flag.Special("--"),
+    // note: -- and --(-*) all match here, this is a bit ugly on usage, too as we need an empty
+    // string to match this. Could just rename something like `--args` instead.
+    Flag.ArgN("--", null),
 };
 
 
 fn cmdRun(allocator: &Allocator, args: []const []const u8) !void {
-    var flags = try Args.parse(allocator, args_build_spec, args);
+    var flags = try Args.parse(allocator, args_run_spec, args);
     defer flags.deinit();
 
     if (flags.present("help")) {
@@ -644,7 +647,12 @@ fn cmdRun(allocator: &Allocator, args: []const []const u8) !void {
         return;
     }
 
-    const runtime_args = flags.many("--") ?? []const []const u8 {};
+    const runtime_args = flags.many("") ?? []const []const u8 {};
+
+    warn("runtime args:\n");
+    for (runtime_args) |cargs| {
+        warn("{}\n", cargs);
+    }
 }
 
 // translate-c /////////////////////////////////////////////////////////////////////////////////////
@@ -669,7 +677,7 @@ const args_translate_c_spec = []Flag {
 };
 
 fn cmdTranslateC(allocator: &Allocator, args: []const []const u8) !void {
-    var flags = try Args.parse(allocator, args_build_spec, args);
+    var flags = try Args.parse(allocator, args_translate_c_spec, args);
     defer flags.deinit();
 
     if (flags.present("help")) {

@@ -27,7 +27,6 @@ fn trimStart(slice: []const u8, ch: u8) []const u8 {
         i += 1;
     }
 
-    // '---' case?
     return slice[i..];
 }
 
@@ -45,10 +44,11 @@ fn argInAllowedSet(maybe_set: ?[]const []const u8, arg: []const u8) bool {
 }
 
 // modifies the current argument index during iteration
-fn readFlagArguments(allocator: &Allocator, args: []const []const u8, required: usize,
+fn readFlagArguments(allocator: &Allocator, args: []const []const u8, maybe_required: ?usize,
                      allowed_set: ?[]const []const u8, index: &usize) !FlagArg {
-    switch (required) {
-        0 => return FlagArg { .None = undefined },  // TODO: Required to force non-tag but value
+
+    if (maybe_required) |required| switch (required) {
+        0 => return FlagArg { .None = undefined },  // TODO: Required to force non-tag but value?
         1 => {
             if (*index + 1 >= args.len) {
                 return error.MissingFlagArguments;
@@ -85,6 +85,22 @@ fn readFlagArguments(allocator: &Allocator, args: []const []const u8, required: 
 
             return FlagArg { .Many = extra };
         },
+    } else {
+        // collect all remaining arguments
+        var extra = ArrayList([]const u8).init(allocator);
+        errdefer extra.deinit();
+
+        while (*index < args.len) : (*index += 1) {
+            const arg = args[*index];
+
+            if (!argInAllowedSet(allowed_set, arg)) {
+                return error.ArgumentNotInAllowedSet;
+            }
+
+            try extra.append(arg);
+        }
+
+        return FlagArg { .Many = extra };
     }
 }
 
@@ -191,7 +207,7 @@ const FlagArg = union(enum) {
 // Specification for how a flag should be parsed.
 pub const Flag = struct {
     name: []const u8,
-    required: usize,
+    required: ?usize,
     allowed_set: ?[]const []const u8,
 
     pub fn Bool(comptime name: []const u8) Flag {
@@ -202,7 +218,7 @@ pub const Flag = struct {
         return ArgN(name, 1);
     }
 
-    pub fn ArgN(comptime name: []const u8, comptime n: usize) Flag {
+    pub fn ArgN(comptime name: []const u8, comptime n: ?usize) Flag {
         return Flag {
             .name = name,
             .required = n,
