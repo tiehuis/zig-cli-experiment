@@ -1,0 +1,22 @@
+#compdef zig
+
+# https://ziglang.org/
+
+local -a commands
+
+commands=(
+    'build:Build project from build.zig' \
+    'build-exe:Create executable from source or object files' \
+    'build-lib:Create library from source or object files' \
+    'build-obj:Create object from source or assembly' \
+    'cc:Call the system c compiler and pass args through' \
+    'fmt:Parse file and render in canonical zig format' \
+    'run:Create executable and run immediately' \
+    'targets:List available compilation targets' \
+    'test:Create and run a test build' \
+    'translate-c:Convert c code to zig code' \
+    'version:Print version number and exit' \
+    'zen:Print zen of zig and exit' \
+)
+
+_describe 'command' commands

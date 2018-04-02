@@ -1,0 +1,115 @@
+# https://ziglang.org/
+
+_zig() {
+    local i cur prev opts cmds
+
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+    cmd=""
+    opts=""
+
+    for i in ${COMP_WORDS[@]}
+    do
+        case "${i}" in
+            zig)
+                cmd="zig"
+                ;;
+
+            build)
+                cmd+="__build"
+                ;;
+            build-exe)
+                cmd+="__build_exe"
+                ;;
+            build-lib)
+                cmd+="__build_lib"
+                ;;
+            build-obj)
+                cmd+="__build_obj"
+                ;;
+            cc)
+                cmd+="__cc"
+                ;;
+            fmt)
+                cmd+="__fmt"
+                ;;
+            run)
+                cmd+="__run"
+                ;;
+            targets)
+                cmd+="__targets"
+                ;;
+            test)
+                cmd+="__test"
+                ;;
+            translate-c)
+                cmd+="__translate_c"
+                ;;
+            version)
+                cmd+="__version"
+                ;;
+            zen)
+                cmd+="__zen"
+                ;;
+            *)
+                ;;
+        esac
+    done
+
+    case "${cmd}" in
+        zig)
+            opts=" build build-exe build-lib build-obj cc fmt run targets test translate-c version zen"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]]; then
+                COMPREPLY=($(compgen -W "${opts}" -- ${cur}))
+                return 0
+            fi
+
+            case "${prev}" in
+                *) COMPREPLY=() ;;
+            esac
+
+            COMPREPLY=($(compgen -W "${opts}" -- ${cur}))
+            return 0
+            ;;
+
+        build)
+            return 0
+            ;;
+        build_exe)
+            return 0
+            ;;
+        build_lib)
+            return 0
+            ;;
+        build_obj)
+            return 0
+            ;;
+        cc)
+            return 0
+            ;;
+        fmt)
+            return 0
+            ;;
+        run)
+            return 0
+            ;;
+        targets)
+            return 0
+            ;;
+        test)
+            return 0
+            ;;
+        translate_c)
+            return 0
+            ;;
+        version)
+            return 0
+            ;;
+        zen)
+            return 0
+            ;;
+    esac
+}
+
+complete -F _zig -o bashdefault -o default zig

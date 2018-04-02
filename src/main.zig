@@ -34,7 +34,7 @@ const usage =
     \\Commands:
     \\
     \\  build                        Build project from build.zig
-    \\  build-exe   [source]         create executable from source or object files
+    \\  build-exe   [source]         Create executable from source or object files
     \\  build-lib   [source]         Create library from source or object files
     \\  build-obj   [source]         Create object from source or assembly
     \\  cc          [args]           Call the system c compiler and pass args through
