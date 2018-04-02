@@ -33,18 +33,18 @@ const usage =
     \\
     \\Commands:
     \\
-    \\  build                        build project from build.zig
+    \\  build                        Build project from build.zig
     \\  build-exe   [source]         create executable from source or object files
-    \\  build-lib   [source]         create library from source or object files
-    \\  build-obj   [source]         create object from source or assembly
-    \\  cc          [args]           call the system c compiler and pass args through
-    \\  run         [source]         create executable and run immediately
-    \\  fmt         [source]         parse file and render in canonical zig format
-    \\  translate-c [source]         convert c code to zig code
-    \\  targets                      list available compilation targets
-    \\  test        [source]         create and run a test build
-    \\  version                      print version number and exit
-    \\  zen                          print zen of zig and exit
+    \\  build-lib   [source]         Create library from source or object files
+    \\  build-obj   [source]         Create object from source or assembly
+    \\  cc          [args]           Call the system c compiler and pass args through
+    \\  fmt         [source]         Parse file and render in canonical zig format
+    \\  run         [source]         Create executable and run immediately
+    \\  targets                      List available compilation targets
+    \\  test        [source]         Create and run a test build
+    \\  translate-c [source]         Convert c code to zig code
+    \\  version                      Print version number and exit
+    \\  zen                          Print zen of zig and exit
     \\
     \\
     ;
@@ -91,13 +91,15 @@ pub fn main() !void {
         Command { .name = "build-obj",   .exec = cmdBuildObj   },
         Command { .name = "cc",          .exec = cmdCc         },
         Command { .name = "fmt",         .exec = cmdFmt        },
-        Command { .name = "help",        .exec = cmdHelp       },
         Command { .name = "run",         .exec = cmdRun        },
-        Command { .name = "translate-c", .exec = cmdTranslateC },
         Command { .name = "targets",     .exec = cmdTargets    },
         Command { .name = "test",        .exec = cmdTest       },
+        Command { .name = "translate-c", .exec = cmdTranslateC },
         Command { .name = "version",     .exec = cmdVersion    },
         Command { .name = "zen",         .exec = cmdZen        },
+
+        // undocumented commands
+        Command { .name = "help",        .exec = cmdHelp       },
 
         // non user facing commands
         Command { .name = "BUILD_INFO",  .exec = cmdBuildInfo  },
@@ -161,8 +163,10 @@ const args_build_spec = []Flag {
 
 const missing_build_file =
     \\No 'build.zig' file found.
+    \\
     \\Initialize a 'build.zig' template file with `zig build --init`,
     \\or build an executable directly with `zig build-exe $FILENAME.zig`.
+    \\
     \\See: `zig build --help` or `zig help` for more options.
     \\
     \\
@@ -292,61 +296,61 @@ const usage_build_generic =
     \\       zig build-obj <options> [file]
     \\
     \\General Options
-    \\  --help                       print this help and exit
-    \\  --color [auto|off|on]        enable or disable colored error messages
+    \\  --help                       Print this help and exit
+    \\  --color [auto|off|on]        Enable or disable colored error messages
     \\
     \\Compile Options:
-    \\  --assembly [source]          add assembly file to build
-    \\  --cache-dir [path]           override the cache directory
-    \\  --emit [filetype]            emit a specific file format as compilation output
-    \\  --enable-timing-info         print timing diagnostics
-    \\  --libc-include-dir [path]    directory where libc stdlib.h resides
-    \\  --name [name]                override output name
-    \\  --output [file]              override destination path
-    \\  --output-h [file]            override generated header file path
-    \\  --pkg-begin [name] [path]    make package available to import and push current pkg
-    \\  --pkg-end                    pop current pkg
-    \\  --release-fast               build with optimizations on and safety off
-    \\  --release-safe               build with optimizations on and safety on
-    \\  --static                     output will be statically linked
-    \\  --strip                      exclude debug symbols
-    \\  --target-arch [name]         specify target architecture
-    \\  --target-environ [name]      specify target environment
-    \\  --target-os [name]           specify target operating system
-    \\  --verbose-tokenize           turn on compiler debug output for tokenization
-    \\  --verbose-ast                turn on compiler debug output for parsing into an AST
-    \\  --verbose-link               turn on compiler debug output for linking
-    \\  --verbose-ir                 turn on compiler debug output for Zig IR
-    \\  --verbose-llvm-ir            turn on compiler debug output for LLVM IR
-    \\  --verbose-cimport            turn on compiler debug output for C imports
-    \\  --zig-install-prefix [path]  override directory where zig thinks it is installed
-    \\  -dirafter [dir]              same as -isystem but do it last
-    \\  -isystem [dir]               add additional search path for other .h files
-    \\  -mllvm [arg]                 additional arguments to forward to LLVM's option processing
+    \\  --assembly [source]          Add assembly file to build
+    \\  --cache-dir [path]           Override the cache directory
+    \\  --emit [filetype]            Emit a specific file format as compilation output
+    \\  --enable-timing-info         Print timing diagnostics
+    \\  --libc-include-dir [path]    Directory where libc stdlib.h resides
+    \\  --name [name]                Override output name
+    \\  --output [file]              Override destination path
+    \\  --output-h [file]            Override generated header file path
+    \\  --pkg-begin [name] [path]    Make package available to import and push current pkg
+    \\  --pkg-end                    Pop current pkg
+    \\  --release-fast               Build with optimizations on and safety off
+    \\  --release-safe               Build with optimizations on and safety on
+    \\  --static                     Output will be statically linked
+    \\  --strip                      Exclude debug symbols
+    \\  --target-arch [name]         Specify target architecture
+    \\  --target-environ [name]      Specify target environment
+    \\  --target-os [name]           Specify target operating system
+    \\  --verbose-tokenize           Turn on compiler debug output for tokenization
+    \\  --verbose-ast                Turn on compiler debug output for parsing into an AST
+    \\  --verbose-link               Turn on compiler debug output for linking
+    \\  --verbose-ir                 Turn on compiler debug output for Zig IR
+    \\  --verbose-llvm-ir            Turn on compiler debug output for LLVM IR
+    \\  --verbose-cimport            Turn on compiler debug output for C imports
+    \\  --zig-install-prefix [path]  Override directory where zig thinks it is installed
+    \\  -dirafter [dir]              Same as -isystem but do it last
+    \\  -isystem [dir]               Add additional search path for other .h files
+    \\  -mllvm [arg]                 Additional arguments to forward to LLVM's option processing
     \\
     \\Link Options:
-    \\  --ar-path [path]             set the path to ar
-    \\  --dynamic-linker [path]      set the path to ld.so
-    \\  --each-lib-rpath             add rpath for each used dynamic library
-    \\  --libc-lib-dir [path]        directory where libc crt1.o resides
-    \\  --libc-static-lib-dir [path] directory where libc crtbegin.o resides
+    \\  --ar-path [path]             Set the path to ar
+    \\  --dynamic-linker [path]      Set the path to ld.so
+    \\  --each-lib-rpath             Add rpath for each used dynamic library
+    \\  --libc-lib-dir [path]        Directory where libc crt1.o resides
+    \\  --libc-static-lib-dir [path] Directory where libc crtbegin.o resides
     \\  --msvc-lib-dir [path]        (windows) directory where vcruntime.lib resides
     \\  --kernel32-lib-dir [path]    (windows) directory where kernel32.lib resides
-    \\  --library [lib]              link against lib
-    \\  --forbid-library [lib]       make it an error to link against lib
-    \\  --library-path [dir]         add a directory to the library search path
-    \\  --linker-script [path]       use a custom linker script
-    \\  --object [obj]               add object file to build
-    \\  -rdynamic                    add all symbols to the dynamic symbol table
-    \\  -rpath [path]                add directory to the runtime library search path
+    \\  --library [lib]              Link against lib
+    \\  --forbid-library [lib]       Make it an error to link against lib
+    \\  --library-path [dir]         Add a directory to the library search path
+    \\  --linker-script [path]       Use a custom linker script
+    \\  --object [obj]               Add object file to build
+    \\  -rdynamic                    Add all symbols to the dynamic symbol table
+    \\  -rpath [path]                Add directory to the runtime library search path
     \\  -mconsole                    (windows) --subsystem console to the linker
     \\  -mwindows                    (windows) --subsystem windows to the linker
     \\  -framework [name]            (darwin) link against framework
     \\  -mios-version-min [ver]      (darwin) set iOS deployment target
     \\  -mmacosx-version-min [ver]   (darwin) set Mac OS X deployment target
-    \\  --ver-major [ver]            dynamic library semver major version
-    \\  --ver-minor [ver]            dynamic library semver minor version
-    \\  --ver-patch [ver]            dynamic library semver patch version
+    \\  --ver-major [ver]            Dynamic library semver major version
+    \\  --ver-minor [ver]            Dynamic library semver minor version
+    \\  --ver-patch [ver]            Dynamic library semver patch version
     \\
     \\
     ;
@@ -501,12 +505,14 @@ const usage_fmt =
     \\
     \\Options:
     \\   --help                 Print this help and exit
+    \\   --keep-backups         Retain backup entries for every file
     \\
     \\
     ;
 
 const args_fmt_spec = []Flag {
     Flag.Bool("--help"),
+    Flag.Bool("--keep-backups"),
 };
 
 fn cmdFmt(allocator: &Allocator, args: []const []const u8) !void {
@@ -524,10 +530,7 @@ fn cmdFmt(allocator: &Allocator, args: []const []const u8) !void {
     }
 
     for (flags.positionals.toSliceConst()) |file_path| {
-        warn("writing {}\n", file_path);
-
         var file = try os.File.openRead(allocator, file_path);
-        var file_closed = false;
         defer file.close();
 
         const source_code = io.readFileAlloc(allocator, file_path) catch |err| {
@@ -543,11 +546,24 @@ fn cmdFmt(allocator: &Allocator, args: []const []const u8) !void {
         var tree = try parser.parse();
         defer tree.deinit();
 
-        // TODO: EACCES, create a copy and do an atomic copy instead?
-        const baf = try io.BufferedAtomicFile.create(allocator, file_path);
-        defer baf.destroy();
+        var original_file_backup = try Buffer.init(allocator, file_path);
+        defer original_file_backup.deinit();
+        try original_file_backup.append(".backup");
 
-        try parser.renderSource(baf.stream(), tree.root_node);
+        try os.rename(allocator, file_path, original_file_backup.toSliceConst());
+
+        std.debug.warn("{}\n", file_path);
+
+        // TODO: BufferedAtomicFile has some access problems.
+        var out_file = try os.File.openWrite(allocator, file_path);
+        defer out_file.close();
+
+        var out_file_stream = io.FileOutStream.init(&out_file);
+        try parser.renderSource(out_file_stream.stream, tree.root_node);
+
+        if (!flags.present("keep-backups")) {
+            try os.deleteFile(allocator, original_file_backup.toSliceConst());
+        }
     }
 }
 
@@ -607,17 +623,16 @@ fn cmdTest(allocator: &Allocator, args: []const []const u8) !void {
         try stderr.write(usage_test);
         return;
     }
+
+    // compile the test program into the cache and run
 }
 
 // run ////////////////////////////////////////////////////////////////////////////////////////////
 
 // TODO: We may want to simplify the run interface. It should be for simple quick scripts and if you
 // need something more complex use `zig build-exe` and run manually.
-//
-// TODO: Handle `--` in argument parser. If encountered it simply collects all remaining arguments.
-// Access as normal via `--`.
 const usage_run =
-    \\usage: zig run [file] -- runtime args
+    \\usage: zig run [file] -- <runtime args>
     \\
     \\Options:
     \\   --help                 Print this help and exit
@@ -627,8 +642,7 @@ const usage_run =
 
 const args_run_spec = []Flag {
     Flag.Bool("--help"),
-    // note: -- and --(-*) all match here, this is a bit ugly on usage, too as we need an empty
-    // string to match this. Could just rename something like `--args` instead.
+    // Access by checking the empty string '--'.
     Flag.ArgN("--", null),
 };
 
@@ -661,10 +675,10 @@ const usage_translate_c =
     \\usage: zig translate-c [file]
     \\
     \\Options:
-    \\  --help                       print this help and exit
-    \\  --enable-timing-info         print timing diagnostics
-    \\  --libc-include-dir [path]    directory where libc stdlib.h resides
-    \\  --output [path]              output file to write generated zig file (default: stdout)
+    \\  --help                       Print this help and exit
+    \\  --enable-timing-info         Print timing diagnostics
+    \\  --libc-include-dir [path]    Directory where libc stdlib.h resides
+    \\  --output [path]              Output file to write generated zig file (default: stdout)
     \\
     \\
     ;
@@ -702,11 +716,22 @@ fn cmdTranslateC(allocator: &Allocator, args: []const []const u8) !void {
     // codegen_set_libc_include_dir(g);
     // codegen_translate_c(g, flags.positional.at(0))
 
-    // const out_stream = flags.single("output") ?? stdout;
-    // ast_render(g, stdout, g->root_import->root, 4);
+    var output_stream = stdout;
+    if (flags.single("output")) |output_file| {
+        var file = try os.File.openWrite(allocator, output_file);
+        defer file.close();
+
+        var file_stream = io.FileOutStream.init(&file);
+        // TODO: Not being set correctly, still stdout
+        output_stream = &file_stream.stream;
+    }
+
+    // ast_render(g, output_stream, g->root_import->root, 4);
+    try output_stream.write("pub const example = 10;\n");
 
     if (flags.present("enable-timing-info")) {
         // codegen_print_timing_info(g, stdout);
+        try stderr.write("printing timing info for translate-c\n");
     }
 }
 
@@ -754,14 +779,14 @@ fn cmdBuildInfo(allocator: &Allocator, args: []const []const u8) !void {
     };
 
     try stdout.print(
-        \\ZIG_CMAKE_BINARY_DIR {}
-        \\ZIG_CXX_COMPILER     {}
-        \\ZIG_LLVM_CONFIG_EXE  {}
-        \\ZIG_LLD_INCLUDE_PATH {}
-        \\ZIG_LLD_LIBRARIES    {}
-        \\ZIG_STD_FILES        {}
-        \\ZIG_C_HEADER_FILES   {}
-        \\ZIG_DIA_GUIDS_LIB    {}
+        \\# ZIG_CMAKE_BINARY_DIR {}
+        \\# ZIG_CXX_COMPILER     {}
+        \\# ZIG_LLVM_CONFIG_EXE  {}
+        \\# ZIG_LLD_INCLUDE_PATH {}
+        \\# ZIG_LLD_LIBRARIES    {}
+        \\# ZIG_STD_FILES        {}
+        \\# ZIG_C_HEADER_FILES   {}
+        \\# ZIG_DIA_GUIDS_LIB    {}
         \\
         ,
         c.ZIG_CMAKE_BINARY_DIR,
