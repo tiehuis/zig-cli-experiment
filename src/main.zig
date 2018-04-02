@@ -100,9 +100,7 @@ pub fn main() !void {
 
         // undocumented commands
         Command { .name = "help",        .exec = cmdHelp       },
-
-        // non user facing commands
-        Command { .name = "BUILD_INFO",  .exec = cmdBuildInfo  },
+        Command { .name = "internal",    .exec = cmdInternal   },
     };
 
     inline for (commands) |command| {
@@ -764,9 +762,39 @@ fn cmdZen(allocator: &Allocator, args: []const []const u8) !void {
     try stdout.write(info_zen);
 }
 
-// BUILD_INFO //////////////////////////////////////////////////////////////////////////////////////
+// internal ////////////////////////////////////////////////////////////////////////////////////////
 
-fn cmdBuildInfo(allocator: &Allocator, args: []const []const u8) !void {
+const usage_internal =
+    \\usage: zig internal [subcommand]
+    \\
+    \\Sub-Commands:
+    \\  build-info                   Print static compiler build-info
+    \\
+    \\
+    ;
+
+fn cmdInternal(allocator: &Allocator, args: []const []const u8) !void {
+    if (args.len == 0) {
+        try stderr.write(usage_internal);
+        return;
+    }
+
+    const sub_commands = []Command {
+        Command { .name = "build-info", .exec = cmdInternalBuildInfo },
+    };
+
+    inline for (sub_commands) |sub_command| {
+        if (mem.eql(u8, sub_command.name, args[0])) {
+            try sub_command.exec(allocator, args[1..]);
+            return;
+        }
+    }
+
+    try stderr.print("unknown sub command: {}\n\n", args[0]);
+    try stderr.write(usage_internal);
+}
+
+fn cmdInternalBuildInfo(allocator: &Allocator, args: []const []const u8) !void {
     const c = struct {
         const ZIG_CMAKE_BINARY_DIR = "placeholder";
         const ZIG_CXX_COMPILER = "placeholder";
