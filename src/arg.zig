@@ -4,22 +4,6 @@ const Allocator = mem.Allocator;
 const ArrayList = std.ArrayList;
 const HashMap = std.HashMap;
 
-// 32-bit FNV-1a
-fn hash_str(str: []const u8) u32 {
-    var hash: u32 = 2166136261;
-    for (str) |b| {
-        hash = hash ^ b;
-        hash = hash *% 16777619;
-    }
-    return hash;
-}
-
-fn eql_str(a: []const u8, b: []const u8) bool {
-    return mem.eql(u8, a, b);
-}
-
-const HashMapFlags = HashMap([]const u8, FlagArg, hash_str, eql_str);
-
 fn trimStart(slice: []const u8, ch: u8) []const u8 {
     var i: usize = 0;
     for (slice) |b| {
@@ -103,6 +87,22 @@ fn readFlagArguments(allocator: &Allocator, args: []const []const u8, maybe_requ
         return FlagArg { .Many = extra };
     }
 }
+
+// 32-bit FNV-1a
+fn hash_str(str: []const u8) u32 {
+    var hash: u32 = 2166136261;
+    for (str) |b| {
+        hash = hash ^ b;
+        hash = hash *% 16777619;
+    }
+    return hash;
+}
+
+fn eql_str(a: []const u8, b: []const u8) bool {
+    return mem.eql(u8, a, b);
+}
+
+const HashMapFlags = HashMap([]const u8, FlagArg, hash_str, eql_str);
 
 // A store for querying found flags and positional arguments.
 pub const Args = struct {
