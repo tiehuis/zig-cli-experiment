@@ -66,7 +66,11 @@ fn cmdPlaceholder(allocator: &Allocator, args: []const []const u8) !void {
 }
 
 pub fn main() !void {
-    const allocator = std.heap.c_allocator;
+    // TODO: Need a generic allocator since we use unbounded memory for things like fmt and building
+    // if we do in process.
+    var mem_buf: [1024 * 512]u8 = undefined;
+    var fixed_allocator = std.heap.FixedBufferAllocator.init(mem_buf[0..]);
+    const allocator = &fixed_allocator.allocator;
 
     var stdout_file = try std.io.getStdOut();
     var stdout_out_stream = std.io.FileOutStream.init(&stdout_file);
@@ -569,24 +573,23 @@ fn cmdFmt(allocator: &Allocator, args: []const []const u8) !void {
 
 fn cmdTargets(allocator: &Allocator, args: []const []const u8) !void {
     // TODO: Need field access by name to get the enum value.
-    // stdout.write("Architectures:\n");
+    try stdout.write("Architectures:\n");
     // for (@fieldsOf(builtin.Arch)) |arch| {
     //     const native_str = ""; // if (builtin.arch == arch) " (native) " else "";
     //     stdout.print("   {}{}\n", native_str, arch.name);
     // }
 
-    // stdout.write("Operating Systems:\n");
+    try stdout.write("Operating Systems:\n");
     // for (builtin.Os) |os| {
     //     const native_str = ""; // if (builtin.os == os) " (native) " else "";
     //     stdout.print("   {}{}\n", native_str, os.name);
     // }
 
-    // stdout.write("Environments:\n");
+    try stdout.write("Environments:\n");
     // for (builtin.Environ) |environ| {
     //     const native_str = ""; // if (builtin.environ == environ) " (native) " else "";
     //     stdout.print("   {}{}\n", native_str, environ.name);
     // }
-    try alwaysOk();
 }
 
 // version /////////////////////////////////////////////////////////////////////////////////////////
