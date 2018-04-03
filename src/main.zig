@@ -54,17 +54,6 @@ const Command = struct {
     exec: fn(&Allocator, []const []const u8) error!void,
 };
 
-// Workaround infallible functions
-fn alwaysOk() !void {
-    var always_true: bool = true;
-    if (!always_true) return error.Unreachable;
-}
-
-// Workaround for undefined function error
-fn cmdPlaceholder(allocator: &Allocator, args: []const []const u8) !void {
-    try alwaysOk();
-}
-
 pub fn main() !void {
     // TODO: Need a generic allocator since we use unbounded memory for things like fmt and building
     // if we do in process.
@@ -126,22 +115,23 @@ const usage_build =
     \\   Project-specific options become available when the build file is found.
     \\
     \\General Options:
-    \\   --help                 Print this help and exit
-    \\   --init                 Generate a build.zig template
-    \\   --build-file [file]    Override path to build.zig
-    \\   --cache-dir [path]     Override path to cache directory
-    \\   --verbose              Print commands before executing them
-    \\   --prefix [path]        Override default install prefix
+    \\   --help                       Print this help and exit
+    \\   --init                       Generate a build.zig template
+    \\   --build-file [file]          Override path to build.zig
+    \\   --cache-dir [path]           Override path to cache directory
+    \\   --verbose                    Print commands before executing them
+    \\   --prefix [path]              Override default install prefix
+    \\   --zig-install-prefix [path]  Override directory where zig thinks it is installed
     \\
     \\Advanced Options:
-    \\   --build-file [file]    Override path to build.zig
-    \\   --cache-dir [path]     Override path to cache directory
-    \\   --verbose-tokenize     Enable compiler debug output for tokenization
-    \\   --verbose-ast          Enable compiler debug output for parsing into an AST
-    \\   --verbose-link         Enable compiler debug output for linking
-    \\   --verbose-ir           Enable compiler debug output for Zig IR
-    \\   --verbose-llvm-ir      Enable compiler debug output for LLVM IR
-    \\   --verbose-cimport      Enable compiler debug output for C imports
+    \\   --build-file [file]          Override path to build.zig
+    \\   --cache-dir [path]           Override path to cache directory
+    \\   --verbose-tokenize           Enable compiler debug output for tokenization
+    \\   --verbose-ast                Enable compiler debug output for parsing into an AST
+    \\   --verbose-link               Enable compiler debug output for linking
+    \\   --verbose-ir                 Enable compiler debug output for Zig IR
+    \\   --verbose-llvm-ir            Enable compiler debug output for LLVM IR
+    \\   --verbose-cimport            Enable compiler debug output for C imports
     \\
     \\
     ;
@@ -153,6 +143,8 @@ const args_build_spec = []Flag {
     Flag.Arg1("--cache-dir"),
     Flag.Bool("--verbose"),
     Flag.Arg1("--prefix"),
+    Flag.Arg1("--zig-install-prefix"),
+
     Flag.Arg1("--build-file"),
     Flag.Arg1("--cache-dir"),
     Flag.Bool("--verbose-tokenize"),
@@ -183,8 +175,7 @@ fn cmdBuild(allocator: &Allocator, args: []const []const u8) !void {
         return;
     }
 
-    // TODO: Maybe get all these special paths and return as a struct.
-    const zig_lib_dir = try introspect.resolveZigLibDir(allocator, flags.single("zig_install_prefix") ?? null);
+    const zig_lib_dir = try introspect.resolveZigLibDir(allocator, flags.single("zig-install-prefix") ?? null);
     defer allocator.free(zig_lib_dir);
 
     const zig_std_dir = try os.path.join(allocator, zig_lib_dir, "std");
@@ -196,7 +187,7 @@ fn cmdBuild(allocator: &Allocator, args: []const []const u8) !void {
     const build_runner_path = try os.path.join(allocator, special_dir, "build_runner.zig");
     defer allocator.free(build_runner_path);
 
-    const build_file = flags.single("build-file") ?? "build-zig";
+    const build_file = flags.single("build-file") ?? "build.zig";
     const build_file_abs = try os.path.resolve(allocator, ".", build_file);
     defer allocator.free(build_file_abs);
 
@@ -211,19 +202,7 @@ fn cmdBuild(allocator: &Allocator, args: []const []const u8) !void {
         const build_template_path = try os.path.join(allocator, special_dir, "build_file_template.zig");
         defer allocator.free(build_template_path);
 
-        var src_file = try os.File.openRead(allocator, build_template_path);
-        defer src_file.close();
-
-        var dst_file = try os.File.openWrite(allocator, build_file_abs);
-        defer dst_file.close();
-
-        // TODO: CopyFile?
-        while (true) {
-            var buffer: [4096]u8 = undefined;
-            const n = try src_file.read(buffer[0..]);
-            if (n == 0) break;
-            try dst_file.write(buffer[0..n]);
-        }
+        try os.copyFile(allocator, build_template_path, build_file_abs);
 
         try stderr.print("wrote build.zig template\n");
         return;
@@ -756,6 +735,11 @@ fn cmdTest(allocator: &Allocator, args: []const []const u8) !void {
 
     if (flags.present("help")) {
         try stderr.write(usage_test);
+        return;
+    }
+
+    if (flags.positionals.len != 1) {
+        try stderr.write("expected exactly one zig source file\n");
         return;
     }
 
