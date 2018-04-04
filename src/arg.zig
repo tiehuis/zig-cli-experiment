@@ -123,6 +123,7 @@ pub const Args = struct {
                 // TODO: struct/hashmap lookup would be nice here.
                 for (spec) |flag| {
                     if (mem.eql(u8, arg, flag.name)) {
+                        i += 1;
                         const flag_name_trimmed = trimStart(flag.name, '-');
                         const flag_args = readFlagArguments(allocator, args, flag.required, flag.allowed_set, &i) catch |err| {
                             switch (err) {
@@ -237,21 +238,22 @@ pub const Flag = struct {
 
 test "example" {
     const spec1 = comptime []const Flag {
-        Flag.Bool("help"),
-        Flag.Bool("init"),
-        Flag.Arg1("build-file"),
-        Flag.Arg1("cache-dir"),
-        Flag.Bool("verbose"),
-        Flag.Arg1("prefix"),
-        Flag.Arg1("build-file"),
-        Flag.Arg1("cache-dir"),
-        Flag.Option("color", []const []const u8 { "on", "off", "auto" }),
-        Flag.Bool("verbose-tokenize"),
-        Flag.Bool("verbose-ast"),
-        Flag.Bool("verbose-link"),
-        Flag.Bool("verbose-ir"),
-        Flag.Bool("verbose-llvm-ir"),
-        Flag.Bool("verbose-cimport"),
+        Flag.Bool("--help"),
+        Flag.Bool("--init"),
+        Flag.Arg1("--build-file"),
+        Flag.Arg1("--cache-dir"),
+        Flag.Bool("--verbose"),
+        Flag.Arg1("--prefix"),
+        Flag.Arg1("--build-file"),
+        Flag.Arg1("--cache-dir"),
+        Flag.Arg1("--object"),
+        Flag.Option("--color", []const []const u8 { "on", "off", "auto" }),
+        Flag.Bool("--verbose-tokenize"),
+        Flag.Bool("--verbose-ast"),
+        Flag.Bool("--verbose-link"),
+        Flag.Bool("--verbose-ir"),
+        Flag.Bool("--verbose-llvm-ir"),
+        Flag.Bool("--verbose-cimport"),
     };
 
     const cliargs = []const []const u8 {
@@ -260,10 +262,17 @@ test "example" {
         "--help",
         "value",
         "--init",
+        "--object",
+        "obj1",
+        "--object",
+        "obj2",
         "pos1",
         "pos2",
         "pos3",
         "pos4",
+        "--object",
+        "obj3",
+        "obj4",
     };
 
     var args = try Args.parse(std.debug.global_allocator, spec1, cliargs);
@@ -271,4 +280,8 @@ test "example" {
     std.debug.warn("help: {}\n", args.present("help"));
     std.debug.warn("init: {}\n", args.present("init"));
     std.debug.warn("init2: {}\n", args.present("init2"));
+
+    // Need ability to specify merging flags into a list or keeping single for 1+ arguments. We
+    // currently overwrite and take the last.
+    std.debug.warn("object: {}\n", args.single("object"));
 }

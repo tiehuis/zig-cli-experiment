@@ -761,13 +761,22 @@ const usage_run =
 
 const args_run_spec = []Flag {
     Flag.Bool("--help"),
-    // Access by checking the empty string '--'.
-    Flag.ArgN("--", null),
 };
 
 
 fn cmdRun(allocator: &Allocator, args: []const []const u8) !void {
-    var flags = try Args.parse(allocator, args_run_spec, args);
+    var compile_args = args;
+    var runtime_args: []const []const u8 = []const []const u8 {};
+
+    for (args) |argv, i| {
+        if (mem.eql(u8, argv, "--")) {
+            compile_args = args[0..i];
+            runtime_args = args[i+1..];
+            break;
+        }
+    }
+
+    var flags = try Args.parse(allocator, args_run_spec, compile_args);
     defer flags.deinit();
 
     if (flags.present("help")) {
@@ -779,8 +788,6 @@ fn cmdRun(allocator: &Allocator, args: []const []const u8) !void {
         try stderr.write("expected exactly one zig source file\n");
         return;
     }
-
-    const runtime_args = flags.many("") ?? []const []const u8 {};
 
     warn("runtime args:\n");
     for (runtime_args) |cargs| {
