@@ -380,7 +380,9 @@ const args_build_generic = []Flag {
     Flag.Arg1("--forbid-library"),
     Flag.Arg1("--library-path"),
     Flag.Arg1("--linker-script"),
-    Flag.Arg1("--object"),
+    // TODO: Collect disjoint many arguments into the same array. Maybe redo the null behavior to
+    // read all until next flag '-' leading and special case the runtime argument specified.
+    Flag.ArgN("--object", 1),
     // NOTE: Removed -L since it would need to be special-cased and we have an alias in library-path
     Flag.Bool("-rdynamic"),
     Flag.Arg1("-rpath"),
@@ -400,7 +402,25 @@ const OutputType = enum {
     Lib,
 };
 
-fn cmdBuildExe(allocator: &Allocator, args: []const []const u8) !void {
+const BuildMode = enum {
+    Debug,
+    ReleaseSafe,
+    ReleaseFast,
+};
+
+const OutputColor = enum {
+    Auto,
+    On,
+    Off,
+};
+
+const EmitType = enum {
+    Assembly,
+    Binary,
+    LLVMIr,
+};
+
+fn buildOutputType(allocator: &Allocator, args: []const []const u8, out_type: OutputType) !void {
     var flags = try Args.parse(allocator, args_build_generic, args);
     defer flags.deinit();
 
@@ -409,35 +429,164 @@ fn cmdBuildExe(allocator: &Allocator, args: []const []const u8) !void {
         return;
     }
 
-    // We can consolidate all the build-exe, build-lib, build-obj into a single path once we
-    // set the output type. Check if we should do any specific passing prior.
-    //
-    // test is similar, although the end differs. so possibly consolidate codegen setup and take
-    // a different path on the end.
+    // NOTE: Have an implied preference if multiple specified
+    var build_mode = BuildMode.Debug;
+    if (flags.present("release-fast")) {
+        build_mode = BuildMode.ReleaseFast;
+    } else if (flags.present("release-safe")) {
+        build_mode = BuildMode.ReleaseSafe;
+    }
+
+    // TODO: pkg_begin handling
+
+    // TODO: Automatic conversions associating string with enum type?
+    var color = OutputColor.Auto;
+    if (flags.single("color")) |color_flag| {
+        if (mem.eql(u8, color_flag, "auto")) {
+            color = OutputColor.Auto;
+        } else if (mem.eql(u8, color_flag, "on")) {
+            color = OutputColor.On;
+        } else if (mem.eql(u8, color_flag, "off")) {
+            color = OutputColor.Off;
+        } else {
+            unreachable;
+        }
+    }
+
+    var emit_type = EmitType.Binary;
+    if (flags.single("emit")) |emit_flag| {
+        if (mem.eql(u8, emit_flag, "asm")) {
+            emit_type = EmitType.Assembly;
+        } else if (mem.eql(u8, emit_flag, "bin")) {
+            emit_type = EmitType.Binary;
+        } else if (mem.eql(u8, emit_flag, "llvm-ir")) {
+            emit_type = EmitType.LLVMIr;
+        }
+    }
+
+    // initAllTargets();
+
+    // const target = try ZigTarget.parse(flags.single("target-arch"), flags.single("target-os"), flags.single("target-environ"));
+
+    // build is all identical, run doesn't need anywhere near the arguments, test is potentially
+    // fairly similar. Translate-c can drop half the codegen and initialization.
+
+    // TODO: in-file is actually a positional argument, only want 1? Need to enforce?
+    const in_file: ?[]const u8 = null;
+
+    // TODO: Needs many arg change.
+    if (in_file == null and (??flags.many("object")).len == 0 and (??flags.many("assembly")).len == 0) {
+        try stderr.write("expected soruce file argument or at least one --object or --assembly argument\n");
+        return;
+    }
+
+    // Do this sanity check at the top-level.
+    if (out_type == OutputType.Obj and (??flags.many("object")).len == 0) {
+        try stderr.write("when building an object file, --object arguments are invalid\n");
+        return;
+    }
+
+    // N: we always need a name for build
+
+    // TODO: Get extension name here and construct output path. Build always needs an input file.
+    // Can always infer the --name argument if not present.
+
+    const zig_root_source_file = in_file;
+
+    const full_cache_dir = try os.path.resolve(allocator, ".", flags.single("cache-dir") ?? "zig-cache"[0..]);
+    defer allocator.free(full_cache_dir);
+
+    const zig_lib_dir = try introspect.resolveZigLibDir(allocator, flags.single("zig-install-prefix") ?? null);
+    defer allocator.free(zig_lib_dir);
+
+    // var g = Codegen.create(zig_root_source_file, target, out_type, build_mode, zig_lib_dir_buf);
+    // g.setOutName(out_name);
+    // g.setLibVersion(0, 0, 0); // TODO: version conversion int
+    // g.isTest(false);
+    // g.setLinkerScript(flags.single("linker-script"));
+    // g.setCacheDir(full_cache_dir);
+    // g.setEachLibRpath(flags.present("each-lib-rpath"));
+
+    // // TODO: Prepend -mllvm for clang
+    // g.setClangArgv(flags.many("mllvm"));
+    // g.setLlvmArgv(flags.many("mllvm"));
+
+    // g.setStrip(flags.present("strip"));
+    // g.setIsStatic(flags.present("static"));
+
+    // if (flags.single("libc-lib-dir")) |ok| g.setLibCLibDir(ok);
+    // if (flags.single("libc-static-lib-dir")) |ok| g.setLibCStaticLibDir(ok);
+    // if (flags.single("libc-include-dir")) |ok| g.setLibCIncludeDir(ok);
+    // if (flags.single("msvc-lib-dir")) |ok| g.setMsvcLibDir(ok);
+    // if (flags.single("kernel32-lib-dir")) |ok| g.setKernel32LibDir(ok);
+    // if (flags.single("dynamic-linker")) |ok| g.setDynamicLinker(ok);
+
+    // g.verbose_tokenize = flags.present("verbose-tokenize");
+    // g.verbose_ast = flags.present("verbose-ast");
+    // g.verbose_link = flags.present("verbose-link");
+    // g.verbose_ir = flags.present("verbose-ir");
+    // g.verbose_llvm_ir = flags.present("verbose-llvm-ir");
+    // g.verbose_cimport = flags.present("verbose-cimport");
+
+    // g.setErrMsgColor(color);
+
+    // for (flags.many("library-path")) |lib_dir| g.addLibDir(lib_dir);
+    // // etc...
+
+    // g.setWindowsSubsystem(flags.single("mwindows"), flags.single("mconsole"));
+    // g.setRDynamic(flags.single("rdynamic"));
+
+    // if (flags.single("mmacosx-version-min") and flags.single("mios-version-min")) {
+    //     stderr.write("-mmacosx-version-min and -mios-version-min options not allowed together\n");
+    //     return;
+    // }
+
+    // if (flags.single("mmacosx-version-min")) |ok| g.setMmacosXVersionMin(ok);
+    // if (flags.single("mios-version-min")) |ok| g.setMiosVersionMin(ok);
+
+    // if (flags.single("output-h")) |ok| g.setOutputHPath(ok);
+
+    // // add package, root
+
+    // codegen_set_emit_file_type(g, out_type)
+
+    // for (flags.many("object")) |object| {
+    //     codegen_add_object(g, object);
+    // }
+
+    // for (flags.many("assembly")) |assembly| {
+    //     codegen_add_assembly(g, assembly);
+    // }
+
+    // codegen_build(g);
+    // codegen_link(g, out_file);
+
+    // if (flags.present("print-timing-info")) {
+    //     codegen_print_timing_info(g, stderr);
+    // }
+}
+
+fn cmdBuildExe(allocator: &Allocator, args: []const []const u8) !void {
+    try buildOutputType(allocator, args, OutputType.Exe);
+
+    // codegen_set_emit_file_type
+    // codegen_add_object
+    // codegen_add_assembly
+    // codegen_build
+    // codegen_link
+    // maybe codegen_print_timing_report
 }
 
 // build-lib ///////////////////////////////////////////////////////////////////////////////////////
 
 fn cmdBuildLib(allocator: &Allocator, args: []const []const u8) !void {
-    var flags = try Args.parse(allocator, args_build_generic, args);
-    defer flags.deinit();
-
-    if (flags.present("help")) {
-        try stderr.write(usage_build_generic);
-        return;
-    }
+    try buildOutputType(allocator, args, OutputType.Lib);
 }
 
 // build-obj ///////////////////////////////////////////////////////////////////////////////////////
 
 fn cmdBuildObj(allocator: &Allocator, args: []const []const u8) !void {
-    var flags = try Args.parse(allocator, args_build_generic, args);
-    defer flags.deinit();
-
-    if (flags.present("help")) {
-        try stderr.write(usage_build_generic);
-        return;
-    }
+    try buildOutputType(allocator, args, OutputType.Obj);
 }
 
 // cc //////////////////////////////////////////////////////////////////////////////////////////////
@@ -744,6 +893,8 @@ fn cmdTest(allocator: &Allocator, args: []const []const u8) !void {
     }
 
     // compile the test program into the cache and run
+
+    // See what the overlap is between this and build-exe etc. Depends on the command line requirements.
 }
 
 // run ////////////////////////////////////////////////////////////////////////////////////////////
