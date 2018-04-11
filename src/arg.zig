@@ -123,7 +123,6 @@ pub const Args = struct {
                 // TODO: struct/hashmap lookup would be nice here.
                 for (spec) |flag| {
                     if (mem.eql(u8, arg, flag.name)) {
-                        i += 1;
                         const flag_name_trimmed = trimStart(flag.name, '-');
                         const flag_args = readFlagArguments(allocator, args, flag.required, flag.allowed_set, &i) catch |err| {
                             switch (err) {
