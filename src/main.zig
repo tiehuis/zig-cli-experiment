@@ -195,12 +195,16 @@ fn cmdBuild(allocator: &Allocator, args: []const []const u8) !void {
             os.exit(1);
         }
 
-        const build_template_path = try os.path.join(allocator, special_dir, "build_file_template.zig");
-        defer allocator.free(build_template_path);
+        // Required for proper defer scope finalization
+        {
+            const build_template_path = try os.path.join(allocator, special_dir, "build_file_template.zig");
+            defer allocator.free(build_template_path);
 
-        try os.copyFile(allocator, build_template_path, build_file_abs);
+            try os.copyFile(allocator, build_template_path, build_file_abs);
 
-        try stderr.print("wrote build.zig template\n");
+            try stderr.print("wrote build.zig template\n");
+        }
+
         os.exit(0);
     }
 
@@ -608,13 +612,13 @@ fn buildOutputType(allocator: &Allocator, args: []const []const u8, out_type: Ou
 
     // codegen_set_emit_file_type(g, out_type)
 
-    for (flags.many("object")) |object| {
+    // for (flags.many("object")) |object| {
     //     codegen_add_object(g, object);
-    }
+    // }
 
-    for (flags.many("assembly")) |assembly| {
+    // for (flags.many("assembly")) |assembly| {
     //     codegen_add_assembly(g, assembly);
-    }
+    // }
 
     // codegen_build(g);
     // codegen_link(g, out_file);
@@ -622,6 +626,8 @@ fn buildOutputType(allocator: &Allocator, args: []const []const u8, out_type: Ou
     if (flags.present("print-timing-info")) {
     //     codegen_print_timing_info(g, stderr);
     }
+
+    try stderr.print("building {}: {}\n", @tagName(out_type), in_file);
 }
 
 fn cmdBuildExe(allocator: &Allocator, args: []const []const u8) !void {
@@ -949,6 +955,7 @@ fn cmdTest(allocator: &Allocator, args: []const []const u8) !void {
     // compile the test program into the cache and run
 
     // See what the overlap is between this and build-exe etc. Depends on the command line requirements.
+    try stderr.print("testing file {}\n", flags.positionals.at(0));
 }
 
 // cmd:run /////////////////////////////////////////////////////////////////////////////////////////
