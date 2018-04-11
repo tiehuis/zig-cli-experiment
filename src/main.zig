@@ -522,19 +522,22 @@ fn buildOutputType(allocator: &Allocator, args: []const []const u8, out_type: Ou
     // build is all identical, run doesn't need anywhere near the arguments, test is potentially
     // fairly similar. Translate-c can drop half the codegen and initialization.
 
-    // TODO: in-file is actually a positional argument, only want 1? Need to enforce?
-    const in_file: ?[]const u8 = null;
+    // TODO: enforce one positional max
+    var in_file: ?[]const u8 = null;
+    if (flags.positionals.len != 0) {
+        in_file = flags.positionals.at(0);
+    }
 
     // TODO: Needs many arg change.
     const assembly = flags.many("assembly");
     const objects = flags.many("object");
-    if (in_file == null and (objects == null or (??objects).len == 0) or (assembly == null or (??assembly).len == 0)) {
+    if (in_file == null and (objects == null or (??objects).len == 0) and (assembly == null or (??assembly).len == 0)) {
         try stderr.write("expected source file argument or at least one --object or --assembly argument\n");
         return;
     }
 
     // Do this sanity check at the top-level.
-    if (out_type == OutputType.Obj and (objects == null or (??objects).len == 0)) {
+    if (out_type == OutputType.Obj and (objects != null and (??objects).len != 0)) {
         try stderr.write("when building an object file, --object arguments are invalid\n");
         return;
     }
