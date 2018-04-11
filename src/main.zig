@@ -344,7 +344,7 @@ const args_build_generic = []Flag {
     Flag.Arg1("--name"),
     Flag.Arg1("--output"),
     Flag.Arg1("--output-h"),
-    // TODO: pkg-begin needs to be ended by a corresponding pkg-end, add ability for this
+    // NOTE: Parsed manually after initial check
     Flag.ArgN("--pkg-begin", 2),
     Flag.Bool("--pkg-end"),
     Flag.Bool("--release-fast"),
@@ -416,6 +416,29 @@ const EmitType = enum {
     LLVMIr,
 };
 
+const CliPkg = struct {
+    name: []const u8,
+    path: []const u8,
+    children: ArrayList(&CliPkg),
+    parent: ?&CliPkg,
+
+    pub fn init(allocator: &Allocator, name: []const u8, path: []const u8, parent: ?&CliPkg) !&CliPkg {
+        var pkg = try allocator.create(CliPkg);
+        pkg.name = name;
+        pkg.path = path;
+        pkg.children = ArrayList(&CliPkg).init(allocator);
+        pkg.parent = parent;
+        return pkg;
+    }
+
+    pub fn deinit(self: &CliPkg) void {
+        for (self.children.toSliceConst()) |child| {
+            child.deinit();
+        }
+        self.children.deinit();
+    }
+};
+
 fn buildOutputType(allocator: &Allocator, args: []const []const u8, out_type: OutputType) !void {
     var flags = try Args.parse(allocator, args_build_generic, args);
     defer flags.deinit();
@@ -460,6 +483,36 @@ fn buildOutputType(allocator: &Allocator, args: []const []const u8, out_type: Ou
         } else {
             unreachable;
         }
+    }
+
+    var cur_pkg = try CliPkg.init(allocator, "", "", null); // TODO: Need a path, name?
+    defer cur_pkg.deinit();
+
+    var i: usize = 0;
+    while (i < args.len) : (i += 1) {
+        const arg_name = args[i];
+        if (mem.eql(u8, "--pkg-begin", arg_name)) {
+            // following two arguments guaranteed to exist due to arg parsing
+            i += 1;
+            const new_pkg_name = args[i];
+            i += 1;
+            const new_pkg_path = args[i];
+
+            var new_cur_pkg = try CliPkg.init(allocator, new_pkg_name, new_pkg_path, cur_pkg);
+            try cur_pkg.children.append(new_cur_pkg);
+            cur_pkg = new_cur_pkg;
+        } else if (mem.eql(u8, "--pkg-end", arg_name)) {
+            if (cur_pkg.parent == null) {
+                try stderr.print("encountered --pkg-end with no matching --pkg-begin\n");
+                return;
+            }
+            cur_pkg = ??cur_pkg.parent;
+        }
+    }
+
+    if (cur_pkg.parent != null) {
+        try stderr.print("unmatched --pkg-begin\n");
+        return;
     }
 
     // initAllTargets();
