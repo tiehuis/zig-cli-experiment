@@ -5,6 +5,7 @@ pub fn build(b: &Builder) void {
     const exe = b.addExecutable("zig", "src/main.zig");
     exe.setBuildMode(mode);
 
+    exe.linkSystemLibrary("c");
     exe.setOutputPath("./zig");
 
     b.default_step.dependOn(&exe.step);

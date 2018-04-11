@@ -8,8 +8,6 @@ const Allocator = mem.Allocator;
 const ArrayList = std.ArrayList;
 const Buffer = std.Buffer;
 
-const warn = std.debug.warn;
-
 const arg = @import("arg.zig");
 const introspect = @import("introspect.zig");
 const Args = arg.Args;
@@ -55,11 +53,7 @@ const Command = struct {
 };
 
 pub fn main() !void {
-    // TODO: Need a generic allocator since we use unbounded memory for things like fmt and building
-    // if we do in process.
-    var mem_buf: [1024 * 512]u8 = undefined;
-    var fixed_allocator = std.heap.FixedBufferAllocator.init(mem_buf[0..]);
-    const allocator = &fixed_allocator.allocator;
+    var allocator = std.heap.c_allocator;
 
     var stdout_file = try std.io.getStdOut();
     var stdout_out_stream = std.io.FileOutStream.init(&stdout_file);
@@ -112,8 +106,6 @@ pub fn main() !void {
 const usage_build =
     \\usage: zig build <options>
     \\
-    \\   Project-specific options become available when the build file is found.
-    \\
     \\General Options:
     \\   --help                       Print this help and exit
     \\   --init                       Generate a build.zig template
@@ -122,6 +114,10 @@ const usage_build =
     \\   --verbose                    Print commands before executing them
     \\   --prefix [path]              Override default install prefix
     \\   --zig-install-prefix [path]  Override directory where zig thinks it is installed
+    \\
+    \\Project-Specific Options:
+    \\
+    \\   Project-specific options become available when the build file is found.
     \\
     \\Advanced Options:
     \\   --build-file [file]          Override path to build.zig
@@ -250,20 +246,20 @@ fn cmdBuild(allocator: &Allocator, args: []const []const u8) !void {
     switch (term) {
         os.ChildProcess.Term.Exited => |status| {
             if (status != 0) {
-                warn("{} exited with status {}\n", build_args.at(0), status);
+                try stderr.print("{} exited with status {}\n", build_args.at(0), status);
                 os.exit(1);
             }
         },
         os.ChildProcess.Term.Signal => |signal| {
-            warn("{} killed by signal {}\n", build_args.at(0), signal);
+            try stderr.print("{} killed by signal {}\n", build_args.at(0), signal);
             os.exit(1);
         },
         os.ChildProcess.Term.Stopped => |signal| {
-            warn("{} stopped by signal {}\n", build_args.at(0), signal);
+            try stderr.print("{} stopped by signal {}\n", build_args.at(0), signal);
             os.exit(1);
         },
         os.ChildProcess.Term.Unknown => |status| {
-            warn("{} encountered unknown failure {}\n", build_args.at(0), status);
+            try stderr.print("{} encountered unknown failure {}\n", build_args.at(0), status);
             os.exit(1);
         },
     }
@@ -604,20 +600,20 @@ fn cmdCc(allocator: &Allocator, args: []const []const u8) !void {
     switch (term) {
         os.ChildProcess.Term.Exited => |status| {
             if (status != 0) {
-                warn("cc exited with status {}\n", status);
+                try stderr.print("cc exited with status {}\n", status);
                 os.exit(1);
             }
         },
         os.ChildProcess.Term.Signal => |signal| {
-            warn("cc killed by signal {}\n", signal);
+            try stderr.print("cc killed by signal {}\n", signal);
             os.exit(1);
         },
         os.ChildProcess.Term.Stopped => |signal| {
-            warn("cc stopped by signal {}\n", signal);
+            try stderr.print("cc stopped by signal {}\n", signal);
             os.exit(1);
         },
         os.ChildProcess.Term.Unknown => |status| {
-            warn("cc encountered unknown failure {}\n", status);
+            try stderr.print("cc encountered unknown failure {}\n", status);
             os.exit(1);
         },
     }
@@ -670,7 +666,10 @@ fn cmdFmt(allocator: &Allocator, args: []const []const u8) !void {
         var parser = std.zig.Parser.init(&tokenizer, allocator, file_path);
         defer parser.deinit();
 
-        var tree = try parser.parse();
+        var tree = parser.parse() catch |err| {
+            try stderr.print("error parsing file '{}': {}\n", file_path, err);
+            continue;
+        };
         defer tree.deinit();
 
         var original_file_backup = try Buffer.init(allocator, file_path);
@@ -679,7 +678,7 @@ fn cmdFmt(allocator: &Allocator, args: []const []const u8) !void {
 
         try os.rename(allocator, file_path, original_file_backup.toSliceConst());
 
-        std.debug.warn("{}\n", file_path);
+        try stderr.print("{}\n", file_path);
 
         // TODO: BufferedAtomicFile has some access problems.
         var out_file = try os.File.openWrite(allocator, file_path);
@@ -937,9 +936,9 @@ fn cmdRun(allocator: &Allocator, args: []const []const u8) !void {
         return;
     }
 
-    warn("runtime args:\n");
+    try stderr.print("runtime args:\n");
     for (runtime_args) |cargs| {
-        warn("{}\n", cargs);
+        try stderr.print("{}\n", cargs);
     }
 }
 
