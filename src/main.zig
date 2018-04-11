@@ -68,7 +68,7 @@ pub fn main() !void {
 
     if (args.len <= 1) {
         try stderr.write(usage);
-        return;
+        os.exit(1);
     }
 
     const commands = []Command {
@@ -168,7 +168,7 @@ fn cmdBuild(allocator: &Allocator, args: []const []const u8) !void {
 
     if (flags.present("help")) {
         try stderr.write(usage_build);
-        return;
+        os.exit(0);
     }
 
     const zig_lib_dir = try introspect.resolveZigLibDir(allocator, flags.single("zig-install-prefix") ?? null);
@@ -192,7 +192,7 @@ fn cmdBuild(allocator: &Allocator, args: []const []const u8) !void {
     if (flags.present("init")) {
         if (build_file_exists) {
             try stderr.print("build.zig already exists\n");
-            return;
+            os.exit(1);
         }
 
         const build_template_path = try os.path.join(allocator, special_dir, "build_file_template.zig");
@@ -201,12 +201,12 @@ fn cmdBuild(allocator: &Allocator, args: []const []const u8) !void {
         try os.copyFile(allocator, build_template_path, build_file_abs);
 
         try stderr.print("wrote build.zig template\n");
-        return;
+        os.exit(0);
     }
 
     if (!build_file_exists) {
         try stderr.write(missing_build_file);
-        return;
+        os.exit(1);
     }
 
     // TODO: Invoke the build_runner directly and circumvent running the compiler in a subprocess.
@@ -445,7 +445,7 @@ fn buildOutputType(allocator: &Allocator, args: []const []const u8, out_type: Ou
 
     if (flags.present("help")) {
         try stderr.write(usage_build_generic);
-        return;
+        os.exit(0);
     }
 
     // NOTE: Have an implied preference if multiple specified
@@ -504,7 +504,7 @@ fn buildOutputType(allocator: &Allocator, args: []const []const u8, out_type: Ou
         } else if (mem.eql(u8, "--pkg-end", arg_name)) {
             if (cur_pkg.parent == null) {
                 try stderr.print("encountered --pkg-end with no matching --pkg-begin\n");
-                return;
+                os.exit(1);
             }
             cur_pkg = ??cur_pkg.parent;
         }
@@ -512,7 +512,7 @@ fn buildOutputType(allocator: &Allocator, args: []const []const u8, out_type: Ou
 
     if (cur_pkg.parent != null) {
         try stderr.print("unmatched --pkg-begin\n");
-        return;
+        os.exit(1);
     }
 
     // initAllTargets();
@@ -532,27 +532,29 @@ fn buildOutputType(allocator: &Allocator, args: []const []const u8, out_type: Ou
     const assembly = flags.many("assembly");
     const objects = flags.many("object");
     if (in_file == null and (objects == null or (??objects).len == 0) and (assembly == null or (??assembly).len == 0)) {
-        try stderr.write("expected source file argument or at least one --object or --assembly argument\n");
-        return;
+        try stderr.write("Expected source file argument or at least one --object or --assembly argument\n");
+        os.exit(1);
     }
 
     // Do this sanity check at the top-level.
     if (out_type == OutputType.Obj and (objects != null and (??objects).len != 0)) {
-        try stderr.write("when building an object file, --object arguments are invalid\n");
-        return;
+        try stderr.write("When building an object file, --object arguments are invalid\n");
+        os.exit(1);
     }
-
-    // N: we always need a name for build
 
     // TODO: Get extension name here and construct output path. Build always needs an input file.
     // Can always infer the --name argument if not present.
 
     const zig_root_source_file = in_file;
 
-    const full_cache_dir = try os.path.resolve(allocator, ".", flags.single("cache-dir") ?? "zig-cache"[0..]);
+    const full_cache_dir = os.path.resolve(allocator, ".", flags.single("cache-dir") ?? "zig-cache"[0..]) catch {
+        os.exit(1);
+    };
     defer allocator.free(full_cache_dir);
 
-    const zig_lib_dir = try introspect.resolveZigLibDir(allocator, flags.single("zig-install-prefix") ?? null);
+    const zig_lib_dir = introspect.resolveZigLibDir(allocator, flags.single("zig-install-prefix") ?? null) catch {
+        os.exit(1);
+    };
     defer allocator.free(zig_lib_dir);
 
     // var g = Codegen.create(zig_root_source_file, target, out_type, build_mode, zig_lib_dir_buf);
@@ -594,7 +596,7 @@ fn buildOutputType(allocator: &Allocator, args: []const []const u8, out_type: Ou
 
     // if (flags.single("mmacosx-version-min") and flags.single("mios-version-min")) {
     //     stderr.write("-mmacosx-version-min and -mios-version-min options not allowed together\n");
-    //     return;
+    //     os.exit(1);
     // }
 
     // if (flags.single("mmacosx-version-min")) |ok| g.setMmacosXVersionMin(ok);
@@ -606,20 +608,20 @@ fn buildOutputType(allocator: &Allocator, args: []const []const u8, out_type: Ou
 
     // codegen_set_emit_file_type(g, out_type)
 
-    // for (flags.many("object")) |object| {
+    for (flags.many("object")) |object| {
     //     codegen_add_object(g, object);
-    // }
+    }
 
-    // for (flags.many("assembly")) |assembly| {
+    for (flags.many("assembly")) |assembly| {
     //     codegen_add_assembly(g, assembly);
-    // }
+    }
 
     // codegen_build(g);
     // codegen_link(g, out_file);
 
-    // if (flags.present("print-timing-info")) {
+    if (flags.present("print-timing-info")) {
     //     codegen_print_timing_info(g, stderr);
-    // }
+    }
 }
 
 fn cmdBuildExe(allocator: &Allocator, args: []const []const u8) !void {
@@ -700,12 +702,12 @@ fn cmdFmt(allocator: &Allocator, args: []const []const u8) !void {
 
     if (flags.present("help")) {
         try stderr.write(usage_fmt);
-        return;
+        os.exit(0);
     }
 
     if (flags.positionals.len == 0) {
         try stderr.write("expected at least one source file argument\n");
-        return;
+        os.exit(1);
     }
 
     for (flags.positionals.toSliceConst()) |file_path| {
@@ -936,12 +938,12 @@ fn cmdTest(allocator: &Allocator, args: []const []const u8) !void {
 
     if (flags.present("help")) {
         try stderr.write(usage_test);
-        return;
+        os.exit(0);
     }
 
     if (flags.positionals.len != 1) {
         try stderr.write("expected exactly one zig source file\n");
-        return;
+        os.exit(1);
     }
 
     // compile the test program into the cache and run
@@ -984,12 +986,12 @@ fn cmdRun(allocator: &Allocator, args: []const []const u8) !void {
 
     if (flags.present("help")) {
         try stderr.write(usage_run);
-        return;
+        os.exit(0);
     }
 
     if (flags.positionals.len != 1) {
         try stderr.write("expected exactly one zig source file\n");
-        return;
+        os.exit(1);
     }
 
     try stderr.print("runtime args:\n");
@@ -1024,12 +1026,12 @@ fn cmdTranslateC(allocator: &Allocator, args: []const []const u8) !void {
 
     if (flags.present("help")) {
         try stderr.write(usage_translate_c);
-        return;
+        os.exit(0);
     }
 
     if (flags.positionals.len != 1) {
         try stderr.write("expected exactly one c source file\n");
-        return;
+        os.exit(1);
     }
 
     // set up codegen
@@ -1105,14 +1107,14 @@ const usage_internal =
 fn cmdInternal(allocator: &Allocator, args: []const []const u8) !void {
     if (args.len == 0) {
         try stderr.write(usage_internal);
-        return;
+        os.exit(1);
     }
 
     const sub_commands = []Command {
         Command { .name = "build-info", .exec = cmdInternalBuildInfo },
     };
 
-    inline for (sub_commands) |sub_command| {
+    for (sub_commands) |sub_command| {
         if (mem.eql(u8, sub_command.name, args[0])) {
             try sub_command.exec(allocator, args[1..]);
             return;
