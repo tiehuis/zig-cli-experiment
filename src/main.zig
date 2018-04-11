@@ -96,7 +96,7 @@ pub fn main() !void {
         Command { .name = "internal",    .exec = cmdInternal   },
     };
 
-    inline for (commands) |command| {
+    for (commands) |command| {
         if (mem.eql(u8, command.name, args[1])) {
             try command.exec(allocator, args[2..]);
             return;
@@ -107,7 +107,7 @@ pub fn main() !void {
     try stderr.write(usage);
 }
 
-// build ///////////////////////////////////////////////////////////////////////////////////////////
+// cmd:build ///////////////////////////////////////////////////////////////////////////////////////
 
 const usage_build =
     \\usage: zig build <options>
@@ -269,7 +269,7 @@ fn cmdBuild(allocator: &Allocator, args: []const []const u8) !void {
     }
 }
 
-// build-exe ///////////////////////////////////////////////////////////////////////////////////////
+// cmd:build-exe ///////////////////////////////////////////////////////////////////////////////////
 
 const usage_build_generic =
     \\usage: zig build-exe <options> [file]
@@ -461,6 +461,8 @@ fn buildOutputType(allocator: &Allocator, args: []const []const u8, out_type: Ou
             emit_type = EmitType.Binary;
         } else if (mem.eql(u8, emit_flag, "llvm-ir")) {
             emit_type = EmitType.LLVMIr;
+        } else {
+            unreachable;
         }
     }
 
@@ -475,13 +477,15 @@ fn buildOutputType(allocator: &Allocator, args: []const []const u8, out_type: Ou
     const in_file: ?[]const u8 = null;
 
     // TODO: Needs many arg change.
-    if (in_file == null and (??flags.many("object")).len == 0 and (??flags.many("assembly")).len == 0) {
-        try stderr.write("expected soruce file argument or at least one --object or --assembly argument\n");
+    const assembly = flags.many("assembly");
+    const objects = flags.many("object");
+    if (in_file == null and (objects == null or (??objects).len == 0) or (assembly == null or (??assembly).len == 0)) {
+        try stderr.write("expected source file argument or at least one --object or --assembly argument\n");
         return;
     }
 
     // Do this sanity check at the top-level.
-    if (out_type == OutputType.Obj and (??flags.many("object")).len == 0) {
+    if (out_type == OutputType.Obj and (objects == null or (??objects).len == 0)) {
         try stderr.write("when building an object file, --object arguments are invalid\n");
         return;
     }
@@ -568,28 +572,21 @@ fn buildOutputType(allocator: &Allocator, args: []const []const u8, out_type: Ou
 
 fn cmdBuildExe(allocator: &Allocator, args: []const []const u8) !void {
     try buildOutputType(allocator, args, OutputType.Exe);
-
-    // codegen_set_emit_file_type
-    // codegen_add_object
-    // codegen_add_assembly
-    // codegen_build
-    // codegen_link
-    // maybe codegen_print_timing_report
 }
 
-// build-lib ///////////////////////////////////////////////////////////////////////////////////////
+// cmd:build-lib ///////////////////////////////////////////////////////////////////////////////////
 
 fn cmdBuildLib(allocator: &Allocator, args: []const []const u8) !void {
     try buildOutputType(allocator, args, OutputType.Lib);
 }
 
-// build-obj ///////////////////////////////////////////////////////////////////////////////////////
+// cmd:build-obj ///////////////////////////////////////////////////////////////////////////////////
 
 fn cmdBuildObj(allocator: &Allocator, args: []const []const u8) !void {
     try buildOutputType(allocator, args, OutputType.Obj);
 }
 
-// cc //////////////////////////////////////////////////////////////////////////////////////////////
+// cmd:cc //////////////////////////////////////////////////////////////////////////////////////////
 
 fn cmdCc(allocator: &Allocator, args: []const []const u8) !void {
     // TODO: Would be nice to use libclang directly but I don't think the argument parsing is
@@ -626,7 +623,7 @@ fn cmdCc(allocator: &Allocator, args: []const []const u8) !void {
     }
 }
 
-// fmt /////////////////////////////////////////////////////////////////////////////////////////////
+// cmd:fmt /////////////////////////////////////////////////////////////////////////////////////////
 
 const usage_fmt =
     \\usage: zig fmt [file]...
@@ -697,7 +694,7 @@ fn cmdFmt(allocator: &Allocator, args: []const []const u8) !void {
     }
 }
 
-// targets /////////////////////////////////////////////////////////////////////////////////////////
+// cmd:targets /////////////////////////////////////////////////////////////////////////////////////
 
 // TODO: comptime '@fields' for iteration here instead so we are always in sync.
 const Os = builtin.Os;
@@ -854,7 +851,7 @@ fn cmdTargets(allocator: &Allocator, args: []const []const u8) !void {
     }
 }
 
-// version /////////////////////////////////////////////////////////////////////////////////////////
+// cmd:version /////////////////////////////////////////////////////////////////////////////////////
 
 fn cmdVersion(allocator: &Allocator, args: []const []const u8) !void {
     const c = struct { const ZIG_VERSION_STRING = c"placeholder"; };
@@ -862,7 +859,7 @@ fn cmdVersion(allocator: &Allocator, args: []const []const u8) !void {
     try stdout.print("{}\n", std.cstr.toSliceConst(c.ZIG_VERSION_STRING));
 }
 
-// test ////////////////////////////////////////////////////////////////////////////////////////////
+// cmd:test ////////////////////////////////////////////////////////////////////////////////////////
 
 const usage_test =
     \\usage: zig test [file]...
@@ -897,7 +894,7 @@ fn cmdTest(allocator: &Allocator, args: []const []const u8) !void {
     // See what the overlap is between this and build-exe etc. Depends on the command line requirements.
 }
 
-// run ////////////////////////////////////////////////////////////////////////////////////////////
+// cmd:run /////////////////////////////////////////////////////////////////////////////////////////
 
 // TODO: We may want to simplify the run interface. It should be for simple quick scripts and if you
 // need something more complex use `zig build-exe` and run manually.
@@ -946,7 +943,7 @@ fn cmdRun(allocator: &Allocator, args: []const []const u8) !void {
     }
 }
 
-// translate-c /////////////////////////////////////////////////////////////////////////////////////
+// cmd:translate-c /////////////////////////////////////////////////////////////////////////////////
 
 const usage_translate_c =
     \\usage: zig translate-c [file]
@@ -954,7 +951,6 @@ const usage_translate_c =
     \\Options:
     \\  --help                       Print this help and exit
     \\  --enable-timing-info         Print timing diagnostics
-    \\  --libc-include-dir [path]    Directory where libc stdlib.h resides
     \\  --output [path]              Output file to write generated zig file (default: stdout)
     \\
     \\
@@ -990,7 +986,6 @@ fn cmdTranslateC(allocator: &Allocator, args: []const []const u8) !void {
 
     // codegen_create(g);
     // codegen_set_out_name(g, null);
-    // codegen_set_libc_include_dir(g);
     // codegen_translate_c(g, flags.positional.at(0))
 
     var output_stream = stdout;
@@ -1012,13 +1007,13 @@ fn cmdTranslateC(allocator: &Allocator, args: []const []const u8) !void {
     }
 }
 
-// help ////////////////////////////////////////////////////////////////////////////////////////////
+// cmd:help ////////////////////////////////////////////////////////////////////////////////////////
 
 fn cmdHelp(allocator: &Allocator, args: []const []const u8) !void {
     try stderr.write(usage);
 }
 
-// zen /////////////////////////////////////////////////////////////////////////////////////////////
+// cmd:zen /////////////////////////////////////////////////////////////////////////////////////////
 
 const info_zen =
     \\
@@ -1041,7 +1036,7 @@ fn cmdZen(allocator: &Allocator, args: []const []const u8) !void {
     try stdout.write(info_zen);
 }
 
-// internal ////////////////////////////////////////////////////////////////////////////////////////
+// cmd:internal ////////////////////////////////////////////////////////////////////////////////////
 
 const usage_internal =
     \\usage: zig internal [subcommand]
@@ -1086,14 +1081,14 @@ fn cmdInternalBuildInfo(allocator: &Allocator, args: []const []const u8) !void {
     };
 
     try stdout.print(
-        \\# ZIG_CMAKE_BINARY_DIR {}
-        \\# ZIG_CXX_COMPILER     {}
-        \\# ZIG_LLVM_CONFIG_EXE  {}
-        \\# ZIG_LLD_INCLUDE_PATH {}
-        \\# ZIG_LLD_LIBRARIES    {}
-        \\# ZIG_STD_FILES        {}
-        \\# ZIG_C_HEADER_FILES   {}
-        \\# ZIG_DIA_GUIDS_LIB    {}
+        \\ZIG_CMAKE_BINARY_DIR {}
+        \\ZIG_CXX_COMPILER     {}
+        \\ZIG_LLVM_CONFIG_EXE  {}
+        \\ZIG_LLD_INCLUDE_PATH {}
+        \\ZIG_LLD_LIBRARIES    {}
+        \\ZIG_STD_FILES        {}
+        \\ZIG_C_HEADER_FILES   {}
+        \\ZIG_DIA_GUIDS_LIB    {}
         \\
         ,
         c.ZIG_CMAKE_BINARY_DIR,
